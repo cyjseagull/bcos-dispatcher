@@ -2,8 +2,11 @@
 
 #include <gsl/span>
 #include <tbb/concurrent_queue.h>
+#include <tbb/concurrent_unordered_map.h>
+#include <tbb/mutex.h>
 #include "bcos-framework/interfaces/dispatcher/DispatcherInterface.h"
 #include "bcos-framework/interfaces/executor/ExecutorInterface.h"
+#include "bcos-framework/interfaces/protocol/ProtocolTypeDef.h"
 
 namespace bcos {
 namespace dispatcher {
@@ -27,7 +30,12 @@ private:
   };
 
   std::shared_ptr<bcos::executor::ExecutorInterface> m_executor;
-  std::map<bcos::protocol::BlockNumber, BlockWithCallback> m_queue;
+
+  tbb::concurrent_queue<BlockWithCallback> m_blockQueue;
+  tbb::concurrent_queue<std::function<void(const Error::Ptr &, const protocol::Block::Ptr &)>> m_waitingQueue;
+  tbb::concurrent_unordered_map<bcos::protocol::BlockNumber, BlockWithCallback> m_number2Callback;
+
+  tbb::mutex m_mutex;
 };
 } // namespace dispatcher
 } // namespace bcos
