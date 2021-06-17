@@ -2,7 +2,7 @@
 
 #include <gsl/span>
 #include <tbb/concurrent_queue.h>
-#include <tbb/concurrent_unordered_map.h>
+#include <unordered_map>
 #include <tbb/mutex.h>
 #include "bcos-framework/interfaces/dispatcher/DispatcherInterface.h"
 #include "bcos-framework/interfaces/executor/ExecutorInterface.h"
@@ -33,7 +33,7 @@ private:
 
   tbb::concurrent_queue<BlockWithCallback> m_blockQueue;
   tbb::concurrent_queue<std::function<void(const Error::Ptr &, const protocol::Block::Ptr &)>> m_waitingQueue;
-  tbb::concurrent_unordered_map<bcos::protocol::BlockNumber, BlockWithCallback> m_number2Callback;
+  std::unordered_map<bcos::protocol::BlockNumber, BlockWithCallback> m_number2Callback;
 
   tbb::mutex m_mutex;
 };

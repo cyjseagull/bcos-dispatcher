@@ -2,6 +2,7 @@
 #include "bcos-framework/interfaces/protocol/Block.h"
 #include "bcos-framework/interfaces/protocol/BlockHeader.h"
 #include "bcos-framework/interfaces/protocol/ProtocolTypeDef.h"
+#include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_invoke.h>
@@ -11,8 +12,7 @@ namespace test {
 
 class MockBlockHeader : public bcos::protocol::BlockHeader {
 public:
-  MockBlockHeader(bcos::protocol::BlockNumber number)
-      : bcos::protocol::BlockHeader(nullptr), m_number(number) {}
+  MockBlockHeader(bcos::protocol::BlockNumber number) : bcos::protocol::BlockHeader(nullptr), m_number(number) {}
 
   void decode(bytesConstRef) override {}
   void encode(bytes &) const override {}
@@ -94,24 +94,46 @@ struct DispatcherFixture {
 BOOST_FIXTURE_TEST_SUITE(TestDispatcher, DispatcherFixture)
 
 BOOST_AUTO_TEST_CASE(queue) {
-  auto testBlockHeader = std::make_shared<MockBlockHeader>(111);
-  auto testBlock = std::make_shared<MockBlock>(testBlockHeader);
-
   tbb::atomic<size_t> receiveCount = 0;
   tbb::atomic<size_t> sendCount = 0;
 
+  std::random_device rng;
+  std::uniform_int_distribution<> during(0, 1000);
+
   tbb::parallel_invoke(
-      [this, testBlock, &receiveCount]() {
-        dispatcher->asyncExecuteBlock(testBlock, false, [this, testBlock, &receiveCount](const Error::Ptr &error, const protocol::BlockHeader::Ptr &block) {
-          BOOST_CHECK_EQUAL(testBlock->blockHeader()->number(), block->number());
-          ++receiveCount;
-        });
+      [this, &sendCount, &during, &rng]() {
+        for (size_t i = 100; i < 2000; ++i) {
+          usleep(during(rng));
+          auto testBlockHeader = std::make_shared<MockBlockHeader>(i);
+          auto testBlock = std::make_shared<MockBlock>(testBlockHeader);
+
+          // sim push tx
+          dispatcher->asyncExecuteBlock(testBlock, false, [this, testBlock, &sendCount](const Error::Ptr &error, const protocol::BlockHeader::Ptr &block) {
+            BOOST_CHECK_EQUAL(testBlock->blockHeader()->number(), block->number());
+            ++sendCount;
+          });
+        }
       },
-      [this, testBlock, &sendCount]() {
-        dispatcher->asyncGetLatestBlock([this, testBlock, &sendCount](const Error::Ptr &, const protocol::Block::Ptr &) {
-          // do nothing
-        });
+      [this, &receiveCount, &during, &rng]() {
+        for (size_t i = 100; i < 2000; ++i) {
+          usleep(during(rng));
+          dispatcher->asyncGetLatestBlock([this, &receiveCount, i, &during, &rng](const Error::Ptr &error, const protocol::Block::Ptr &block) {
+            BOOST_CHECK_EQUAL(block->blockHeader()->number(), i);
+            ++receiveCount;
+
+            // sim get and run tx
+            usleep(during(rng));
+            dispatcher->asyncNotifyExecutionResult(nullptr, block->blockHeader(), [](const Error::Ptr &error) { BOOST_CHECK(!error); });
+          });
+        }
       });
+
+  dispatcher->asyncGetLatestBlock([](const Error::Ptr &error, const protocol::Block::Ptr &block) { BOOST_FAIL("Expect to be empty"); });
+
+  auto testBlockHeader = std::make_shared<MockBlockHeader>(500);
+  dispatcher->asyncNotifyExecutionResult(nullptr, testBlockHeader, [](const Error::Ptr &error) { BOOST_CHECK_EQUAL(error->errorCode(), -1); });
+
+  BOOST_CHECK_EQUAL(receiveCount, sendCount);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

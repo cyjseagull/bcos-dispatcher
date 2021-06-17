@@ -39,9 +39,17 @@ void DispatcherImpl::asyncNotifyExecutionResult(const Error::Ptr &_error, const 
     tbb::mutex::scoped_lock scoped(m_mutex);
     auto it = m_number2Callback.find(_header->number());
     if (it != m_number2Callback.end()) {
-      auto &item = it->second;
+      auto item = it->second;
+      m_number2Callback.erase(it);
+
+      scoped.release();
 
       item.callback(_error, _header);
+    } else {
+      auto error = std::make_shared<bcos::Error>(-1, "No such block: " + boost::lexical_cast<std::string>(_header->number()));
+      _callback(error);
+
+      return;
     }
   }
 
