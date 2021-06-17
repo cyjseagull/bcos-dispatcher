@@ -1,12 +1,10 @@
-#pragma once
-
 #include "bcos-dispatcher/DispatcherImpl.h"
 #include "bcos-framework/interfaces/protocol/Block.h"
 #include "bcos-framework/interfaces/protocol/BlockHeader.h"
 #include "bcos-framework/interfaces/protocol/ProtocolTypeDef.h"
 #include <boost/test/unit_test.hpp>
 #include <tbb/parallel_for.h>
-#include <tbb/parallel_do.h>
+#include <tbb/parallel_invoke.h>
 
 namespace bcos {
 namespace test {
@@ -23,7 +21,7 @@ public:
   int32_t version() const override {}
   gsl::span<const bcos::protocol::ParentInfo> parentInfo() const override {}
   bcos::crypto::HashType const &txsRoot() const override {}
-  bcos::crypto::HashType const &receiptRoot() const override {}
+  bcos::crypto::HashType const &receiptsRoot() const override {}
   bcos::crypto::HashType const &stateRoot() const override {}
   bcos::protocol::BlockNumber number() const override { return m_number; }
   u256 const &gasUsed() override {}
@@ -37,7 +35,7 @@ public:
   void setParentInfo(gsl::span<const bcos::protocol::ParentInfo> const &) override {}
   void setParentInfo(bcos::protocol::ParentInfoList &&) override {}
   void setTxsRoot(bcos::crypto::HashType const &) override {}
-  void setReceiptRoot(bcos::crypto::HashType const &) override {}
+  void setReceiptsRoot(bcos::crypto::HashType const &) override {}
   void setStateRoot(bcos::crypto::HashType const &) override {}
   void setNumber(bcos::protocol::BlockNumber) override {}
   void setGasUsed(u256 const &) override {}
@@ -69,22 +67,16 @@ public:
   bcos::protocol::Transaction::ConstPtr transaction(size_t) const override {}
   bcos::protocol::TransactionReceipt::ConstPtr receipt(size_t) const override {}
   bcos::crypto::HashType const &transactionHash(size_t) const override {}
-  bcos::crypto::HashType const &receiptHash(size_t) const override {}
-
   void setBlockType(bcos::protocol::BlockType) override {}
   void setBlockHeader(bcos::protocol::BlockHeader::Ptr) override {}
   void setTransaction(size_t, bcos::protocol::Transaction::Ptr) override {}
   void appendTransaction(bcos::protocol::Transaction::Ptr) override {}
   void setReceipt(size_t, bcos::protocol::TransactionReceipt::Ptr) override {}
   void appendReceipt(bcos::protocol::TransactionReceipt::Ptr) override {}
-  void setTransactionHash(size_t, bcos::crypto::HashType const &) override {}
   void appendTransactionHash(bcos::crypto::HashType const &) override {}
-  void setReceiptHash(size_t, bcos::crypto::HashType const &) override {}
-  void appendReceiptHash(bcos::crypto::HashType const &) override {}
   size_t transactionsSize() const override {}
   size_t transactionsHashSize() const override {}
   size_t receiptsSize() const override {}
-  size_t receiptsHashSize() const override {}
   void setNonceList(bcos::protocol::NonceList const &) override {}
   void setNonceList(bcos::protocol::NonceList &&) override {}
   bcos::protocol::NonceList const &nonceList() const override {}
@@ -108,7 +100,7 @@ BOOST_AUTO_TEST_CASE(queue) {
   tbb::atomic<size_t> receiveCount = 0;
   tbb::atomic<size_t> sendCount = 0;
 
-  tbb::parallel_do(
+  tbb::parallel_invoke(
       [this, testBlock, &receiveCount]() {
         dispatcher->asyncExecuteBlock(testBlock, false, [this, testBlock, &receiveCount](const Error::Ptr &error, const protocol::BlockHeader::Ptr &block) {
           BOOST_CHECK_EQUAL(testBlock->blockHeader()->number(), block->number());
@@ -117,7 +109,7 @@ BOOST_AUTO_TEST_CASE(queue) {
       },
       [this, testBlock, &sendCount]() {
         dispatcher->asyncGetLatestBlock([this, testBlock, &sendCount](const Error::Ptr &, const protocol::Block::Ptr &) {
-
+          // do nothing
         });
       });
 }
