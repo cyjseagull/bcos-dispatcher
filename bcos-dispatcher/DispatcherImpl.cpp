@@ -2,8 +2,59 @@
 #include <thread>
 
 using namespace bcos::dispatcher;
+using namespace bcos::crypto;
 
 void DispatcherImpl::asyncExecuteBlock(const protocol::Block::Ptr& _block, bool _verify,
+    std::function<void(const Error::Ptr&, const protocol::BlockHeader::Ptr&)> _callback)
+{
+    // with completed block
+    if (_verify)
+    {
+        asyncExecuteCompletedBlock(_block, _verify, _callback);
+        return;
+    }
+    // with only txsHash
+    auto txsHashList = std::make_shared<HashList>();
+    for (size_t i = 0; i < _block->transactionsHashSize(); i++)
+    {
+        txsHashList->emplace_back(_block->transactionHash(i));
+    }
+    auto self = std::weak_ptr<DispatcherInterface>(shared_from_this());
+    m_txpool->asyncFillBlock(txsHashList, [self, _block, _verify, _callback](Error::Ptr _error,
+                                              bcos::protocol::TransactionsPtr _txs) {
+        if (!_error)
+        {
+            LOG(ERROR) << LOG_DESC("asyncExecuteBlock failed for fill the block filled")
+                       << LOG_KV("code", _error->errorCode())
+                       << LOG_KV("msg", _error->errorMessage());
+            _callback(_error, nullptr);
+            return;
+        }
+        // fill the block
+        for (auto tx : *_txs)
+        {
+            _block->appendTransaction(tx);
+        }
+        try
+        {
+            auto dispatcher = self.lock();
+            if (!dispatcher)
+            {
+                _callback(std::make_shared<Error>(-1, "asyncExecuteBlock exception"), nullptr);
+                return;
+            }
+            auto dispatcherImpl = std::dynamic_pointer_cast<DispatcherImpl>(dispatcher);
+            dispatcherImpl->asyncExecuteCompletedBlock(_block, _verify, _callback);
+        }
+        catch (std::exception const& e)
+        {
+            LOG(ERROR) << LOG_DESC("asyncExecuteBlock exception")
+                       << LOG_KV("error", boost::diagnostic_information(e));
+        }
+    });
+}
+
+void DispatcherImpl::asyncExecuteCompletedBlock(const protocol::Block::Ptr& _block, bool _verify,
     std::function<void(const Error::Ptr&, const protocol::BlockHeader::Ptr&)> _callback)
 {
     auto item = BlockWithCallback({_block, _verify, _callback});

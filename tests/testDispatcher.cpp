@@ -48,7 +48,7 @@ BOOST_AUTO_TEST_CASE(queue)
                 auto testBlock = fakeAndCheckBlock(cryptoSuite, blockFactory, true, 0, 0);
                 testBlock->blockHeader()->setNumber(i);
                 // sim push tx
-                dispatcher->asyncExecuteBlock(testBlock, false,
+                dispatcher->asyncExecuteCompletedBlock(testBlock, false,
                     [testBlock, &sendCount](
                         const Error::Ptr& error, const protocol::BlockHeader::Ptr& block) {
                         (void)error;
