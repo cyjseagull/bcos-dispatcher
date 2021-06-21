@@ -1,6 +1,5 @@
 #pragma once
 
-#include <gsl/span>
 #include <tbb/concurrent_queue.h>
 #include <unordered_map>
 #include <tbb/mutex.h>

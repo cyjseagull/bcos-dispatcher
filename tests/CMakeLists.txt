@@ -1,17 +1,15 @@
-cmake_minimum_required(VERSION 3.15)
+file(GLOB_RECURSE SOURCES "*.cpp" "*.h" "*.sol")
 
-project(bcos-dispatcher-test)
+# cmake settings
+include(SearchTestCases)
+set(TEST_BINARY_NAME bcos-dispatcher-test)
+config_test_cases("" "${SOURCES}" bin/${TEST_BINARY_NAME} "")
 
-hunter_add_package(Microsoft.GSL)
-hunter_add_package(tbb)
-hunter_add_package(Boost COMPONENTS all)
+add_executable(${TEST_BINARY_NAME} ${SOURCES})
+target_include_directories(${TEST_BINARY_NAME} PRIVATE . ${CMAKE_SOURCE_DIR})
 
-find_package(Microsoft.GSL CONFIG REQUIRED)
-find_package(Boost CONFIG REQUIRED unit_test_framework thread)
-find_package(tbb CONFIG REQUIRED)
+hunter_add_package(wedpr-crypto)
+find_package(wedpr-crypto CONFIG QUIET REQUIRED)
+find_package(Boost CONFIG QUIET REQUIRED unit_test_framework)
 
-add_executable(testDispatcher testDispatcher.cpp main.cpp)
-target_compile_options(testDispatcher PRIVATE -Wno-error -Wno-unused-parameter -Wno-variadic-macros -Wno-return-type -Wno-pedantic)
-# add_dependencies(dispatcher bcostars bcos-framework bcos-front)
-target_link_libraries(testDispatcher dispatcher libcodecd.a libprotocold.a Microsoft.GSL::GSL Boost::unit_test_framework tbb::tbb Boost::thread)
-add_test(testDispatcher testDispatcher)
+target_link_libraries(${TEST_BINARY_NAME} ${BCOS_DISPATCHER_TARGET} bcos-framework::codec bcos-framework::protocol bcos-framework::protocol-pb wedpr-crypto::crypto Boost::unit_test_framework)
