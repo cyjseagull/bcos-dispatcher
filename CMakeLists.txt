@@ -8,13 +8,15 @@ HunterGate(
     SHA1 "29a725d3fac8b23f255530b7e40ffb47b34973f9"
     FILEPATH "${CMAKE_SOURCE_DIR}/hunterConfig.cmake"
 )
-project(Bcos-Dispatcher VERSION "3.0.0")
+project(bcos-dispatcher VERSION "3.0.0")
 set(VERSION_SUFFIX "")
 
 # basic settings
 include(Options)
 configure_project()
 include(CompilerSettings)
+# copy .clang-format into the project path
+include(CopyClangFormat)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -46,3 +48,8 @@ if(TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+if (COVERAGE)
+    include(Coverage)
+    config_coverage("coverage" "'/usr*' '${CMAKE_CURRENT_SOURCE_DIR}/bcos-cmake-scripts*' '${CMAKE_CURRENT_SOURCE_DIR}/test/bcos-test*'")
+endif ()
