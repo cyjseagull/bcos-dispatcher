@@ -22,11 +22,11 @@ void DispatcherImpl::asyncExecuteBlock(const protocol::Block::Ptr& _block, bool 
     auto self = std::weak_ptr<DispatcherInterface>(shared_from_this());
     m_txpool->asyncFillBlock(txsHashList, [self, _block, _verify, _callback](Error::Ptr _error,
                                               bcos::protocol::TransactionsPtr _txs) {
-        if (!_error)
+        if (_error)
         {
-            LOG(ERROR) << LOG_DESC("asyncExecuteBlock failed for fill the block filled")
-                       << LOG_KV("code", _error->errorCode())
-                       << LOG_KV("msg", _error->errorMessage());
+            DISPATCHER_LOG(ERROR) << LOG_DESC("asyncExecuteBlock failed for fill the block filled")
+                                  << LOG_KV("code", _error->errorCode())
+                                  << LOG_KV("msg", _error->errorMessage());
             _callback(_error, nullptr);
             return;
         }
@@ -60,6 +60,10 @@ void DispatcherImpl::asyncExecuteCompletedBlock(const protocol::Block::Ptr& _blo
     auto item = BlockWithCallback({_block, _verify, _callback});
     std::function<void(const Error::Ptr&, const protocol::Block::Ptr&)> callback;
 
+    DISPATCHER_LOG(INFO) << LOG_DESC("asyncExecuteCompletedBlock")
+                         << LOG_KV("number", _block->blockHeader()->number())
+                         << LOG_KV("hash", _block->blockHeader()->hash().abridged())
+                         << LOG_KV("verify", _verify);
     tbb::mutex::scoped_lock scoped(m_mutex);
     auto result = m_waitingQueue.try_pop(callback);
     if (result)
@@ -83,6 +87,9 @@ void DispatcherImpl::asyncGetLatestBlock(
     auto result = m_blockQueue.try_pop(item);
     if (result)
     {
+        DISPATCHER_LOG(INFO) << LOG_DESC("asyncGetLatestBlock")
+                             << LOG_KV("number", item.block->blockHeader()->number())
+                             << LOG_KV("hash", item.block->blockHeader()->hash().abridged());
         m_number2Callback.emplace(item.block->blockHeader()->number(), item);
         scoped.release();
         _callback(nullptr, item.block);
@@ -105,7 +112,9 @@ void DispatcherImpl::asyncNotifyExecutionResult(const Error::Ptr& _error,
             m_number2Callback.erase(it);
 
             scoped.release();
-
+            DISPATCHER_LOG(INFO) << LOG_DESC("asyncNotifyExecutionResult")
+                                 << LOG_KV("number", _header->number())
+                                 << LOG_KV("hashAfterExec", _header->hash().abridged());
             item.callback(_error, _header);
         }
         else

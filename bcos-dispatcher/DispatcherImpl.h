@@ -7,6 +7,8 @@
 #include <tbb/mutex.h>
 #include <unordered_map>
 
+#define DISPATCHER_LOG(LEVEL) LOG(LEVEL) << LOG_BADGE("Dispatcher")
+
 namespace bcos
 {
 namespace dispatcher
