@@ -43,6 +43,8 @@ void DispatcherImpl::asyncExecuteBlock(const protocol::Block::Ptr& _block, bool 
                 _callback(std::make_shared<Error>(-1, "asyncExecuteBlock exception"), nullptr);
                 return;
             }
+            // calculate the txsRoot(TODO: async here to optimize the performance)
+            _block->calculateTransactionRoot(true);
             auto dispatcherImpl = std::dynamic_pointer_cast<DispatcherImpl>(dispatcher);
             dispatcherImpl->asyncExecuteCompletedBlock(_block, _verify, _callback);
         }
