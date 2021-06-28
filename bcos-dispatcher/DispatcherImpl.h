@@ -3,7 +3,6 @@
 #include "bcos-framework/interfaces/dispatcher/DispatcherInterface.h"
 #include "bcos-framework/interfaces/protocol/ProtocolTypeDef.h"
 #include <bcos-framework/interfaces/txpool/TxPoolInterface.h>
-#include <tbb/concurrent_queue.h>
 #include <tbb/mutex.h>
 #include <unordered_map>
 
@@ -46,10 +45,9 @@ private:
 
     bcos::txpool::TxPoolInterface::Ptr m_txpool;
 
-    tbb::concurrent_queue<BlockWithCallback> m_blockQueue;
-    tbb::concurrent_queue<std::function<void(const Error::Ptr&, const protocol::Block::Ptr&)>>
+    std::queue<BlockWithCallback> m_blockQueue;
+    std::queue<std::function<void(const Error::Ptr&, const protocol::Block::Ptr&)>>
         m_waitingQueue;
-    std::unordered_map<bcos::protocol::BlockNumber, BlockWithCallback> m_number2Callback;
 
     tbb::mutex m_mutex;
 };

@@ -61,46 +61,50 @@ void DispatcherImpl::asyncExecuteBlock(const protocol::Block::Ptr& _block, bool 
 void DispatcherImpl::asyncExecuteCompletedBlock(const protocol::Block::Ptr& _block, bool _verify,
     std::function<void(const Error::Ptr&, const protocol::BlockHeader::Ptr&)> _callback)
 {
-    auto item = BlockWithCallback({_block, _verify, _callback});
-    std::function<void(const Error::Ptr&, const protocol::Block::Ptr&)> callback;
-
     DISPATCHER_LOG(INFO) << LOG_DESC("asyncExecuteCompletedBlock")
                          << LOG_KV("consNum", _block->blockHeader()->number())
                          << LOG_KV("hash", _block->blockHeader()->hash().abridged())
                          << LOG_KV("verify", _verify);
-    tbb::mutex::scoped_lock scoped(m_mutex);
-    auto result = m_waitingQueue.try_pop(callback);
-    if (result)
+    std::list<std::function<void()>> callbacks;
+    
     {
-        m_number2Callback.emplace(item.block->blockHeader()->number(), item);
-        scoped.release();
-        callback(nullptr, item.block);
-    }
-    else
-    {
+        tbb::mutex::scoped_lock scoped(m_mutex);
+
         m_blockQueue.emplace(BlockWithCallback({_block, _verify, _callback}));
+
+        // clear the waiting queue
+        while (!m_waitingQueue.empty())
+        {
+            auto callback = m_waitingQueue.front();
+            m_waitingQueue.pop();
+
+            auto frontItem = m_blockQueue.front();
+            callbacks.push_back([callback, frontItem]() { callback(nullptr, frontItem.block); });
+        }
+    }
+
+    for(auto callback: callbacks) {
+        callback();
     }
 }
 
 void DispatcherImpl::asyncGetLatestBlock(
     std::function<void(const Error::Ptr&, const protocol::Block::Ptr&)> _callback)
 {
-    BlockWithCallback item;
-
     tbb::mutex::scoped_lock scoped(m_mutex);
-    auto result = m_blockQueue.try_pop(item);
-    if (result)
+    if (!m_blockQueue.empty())
     {
+        auto item = m_blockQueue.front();
+        // m_blockQueue.pop();
         DISPATCHER_LOG(INFO) << LOG_DESC("asyncGetLatestBlock")
                              << LOG_KV("consNum", item.block->blockHeader()->number())
                              << LOG_KV("hash", item.block->blockHeader()->hash().abridged());
-        m_number2Callback.emplace(item.block->blockHeader()->number(), item);
         scoped.release();
         _callback(nullptr, item.block);
     }
     else
     {
-        m_waitingQueue.push(_callback);
+        m_waitingQueue.emplace(_callback);
     }
 }
 
@@ -109,11 +113,28 @@ void DispatcherImpl::asyncNotifyExecutionResult(const Error::Ptr& _error,
 {
     {
         tbb::mutex::scoped_lock scoped(m_mutex);
-        auto it = m_number2Callback.find(_header->number());
-        if (it != m_number2Callback.end())
+
+        if (!m_blockQueue.empty())
         {
-            auto item = it->second;
-            m_number2Callback.erase(it);
+            auto item = m_blockQueue.front();
+
+            if (item.block->blockHeader()->number() != _header->number())
+            {
+                DISPATCHER_LOG(ERROR)
+                    << LOG_DESC("asyncNotifyExecutionResult error")
+                    << LOG_KV("notify number", item.block->blockHeader()->number())
+                    << LOG_KV("front number", m_blockQueue.front().block->blockHeader()->number());
+
+                auto error = std::make_shared<bcos::Error>(
+                    -2, "asyncNotifyExecutionResult error" +
+                            boost::lexical_cast<std::string>(_header->number()));
+
+                scoped.release();
+                _callback(error);
+                return;
+            }
+
+            m_blockQueue.pop();
 
             scoped.release();
             DISPATCHER_LOG(INFO) << LOG_DESC("asyncNotifyExecutionResult")
@@ -125,6 +146,8 @@ void DispatcherImpl::asyncNotifyExecutionResult(const Error::Ptr& _error,
         {
             auto error = std::make_shared<bcos::Error>(
                 -1, "No such block: " + boost::lexical_cast<std::string>(_header->number()));
+
+            scoped.release();
             _callback(error);
 
             return;
