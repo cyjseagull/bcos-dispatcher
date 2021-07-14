@@ -45,11 +45,18 @@ private:
 
     bcos::txpool::TxPoolInterface::Ptr m_txpool;
 
-    std::queue<BlockWithCallback> m_blockQueue;
-    std::queue<std::function<void(const Error::Ptr&, const protocol::Block::Ptr&)>>
-        m_waitingQueue;
-
-    tbb::mutex m_mutex;
+    // increase order
+    struct BlockCmp
+    {
+        bool operator()(BlockWithCallback const& _first, BlockWithCallback const& _second) const
+        {
+            // increase order
+            return _first.block->blockHeader()->number() > _second.block->blockHeader()->number();
+        }
+    };
+    std::priority_queue<BlockWithCallback, std::vector<BlockWithCallback>, BlockCmp> m_blockQueue;
+    std::queue<std::function<void(const Error::Ptr&, const protocol::Block::Ptr&)>> m_waitingQueue;
+    mutable SharedMutex x_blockQueue;
 };
 }  // namespace dispatcher
 }  // namespace bcos
