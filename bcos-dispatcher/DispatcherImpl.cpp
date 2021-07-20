@@ -1,5 +1,4 @@
 #include "DispatcherImpl.h"
-#include <future>
 #include <thread>
 
 using namespace bcos::dispatcher;
@@ -21,20 +20,24 @@ void DispatcherImpl::asyncExecuteBlock(const protocol::Block::Ptr& _block, bool 
         txsHashList->emplace_back(_block->transactionHash(i));
     }
     auto self = std::weak_ptr<DispatcherInterface>(shared_from_this());
-
-    std::promise<bool> shouldExecCompletedBlock;
-    m_txpool->asyncFillBlock(
-        txsHashList, [&shouldExecCompletedBlock, _block, _callback](
-                         Error::Ptr _error, bcos::protocol::TransactionsPtr _txs) {
-            if (_error)
+    m_txpool->asyncFillBlock(txsHashList, [self, _block, _verify, _callback](Error::Ptr _error,
+                                              bcos::protocol::TransactionsPtr _txs) {
+        if (_error)
+        {
+            DISPATCHER_LOG(ERROR) << LOG_DESC("asyncExecuteBlock: asyncFillBlock failed")
+                                  << LOG_KV("consNum", _block->blockHeader()->number())
+                                  << LOG_KV("hash", _block->blockHeader()->hash().abridged())
+                                  << LOG_KV("code", _error->errorCode())
+                                  << LOG_KV("msg", _error->errorMessage());
+            _callback(_error, nullptr);
+            return;
+        }
+        try
+        {
+            auto dispatcher = self.lock();
+            if (!dispatcher)
             {
-                DISPATCHER_LOG(ERROR)
-                    << LOG_DESC("asyncExecuteBlock: asyncFillBlock failed")
-                    << LOG_KV("consNum", _block->blockHeader()->number())
-                    << LOG_KV("hash", _block->blockHeader()->hash().abridged())
-                    << LOG_KV("code", _error->errorCode()) << LOG_KV("msg", _error->errorMessage());
-                _callback(_error, nullptr);
-                shouldExecCompletedBlock.set_value(false);
+                _callback(std::make_shared<Error>(-1, "internal error"), nullptr);
                 return;
             }
             // fill the block
@@ -44,13 +47,18 @@ void DispatcherImpl::asyncExecuteBlock(const protocol::Block::Ptr& _block, bool 
             }
             // calculate the txsRoot(TODO: async here to optimize the performance)
             _block->calculateTransactionRoot(true);
-            shouldExecCompletedBlock.set_value(true);
-        });
-    if (!shouldExecCompletedBlock.get_future().get())
-    {
-        return;
-    }
-    asyncExecuteCompletedBlock(_block, _verify, _callback);
+            auto dispatcherImpl = std::dynamic_pointer_cast<DispatcherImpl>(dispatcher);
+            dispatcherImpl->asyncExecuteCompletedBlock(_block, _verify, _callback);
+        }
+        catch (std::exception const& e)
+        {
+            DISPATCHER_LOG(WARNING) << LOG_DESC("asyncExecuteBlock exception")
+                                    << LOG_KV("error", boost::diagnostic_information(e))
+                                    << LOG_KV("consNum", _block->blockHeader()->number())
+                                    << LOG_KV("hash", _block->blockHeader()->hash().abridged());
+            _callback(std::make_shared<Error>(-1, "internal error"), nullptr);
+        }
+    });
 }
 
 void DispatcherImpl::asyncExecuteCompletedBlock(const protocol::Block::Ptr& _block, bool _verify,
@@ -71,6 +79,10 @@ void DispatcherImpl::asyncExecuteCompletedBlock(const protocol::Block::Ptr& _blo
             m_waitingQueue.pop();
 
             auto frontItem = m_blockQueue.top();
+            DISPATCHER_LOG(INFO) << LOG_DESC("asyncGetLatestBlock: dispatch block")
+                                 << LOG_KV("consNum", frontItem.block->blockHeader()->number())
+                                 << LOG_KV(
+                                        "hash", frontItem.block->blockHeader()->hash().abridged());
             callbacks.push_back([callback, frontItem]() { callback(nullptr, frontItem.block); });
         }
     }
@@ -91,7 +103,7 @@ void DispatcherImpl::asyncGetLatestBlock(
         {
             auto item = m_blockQueue.top();
             // m_blockQueue.pop();
-            DISPATCHER_LOG(INFO) << LOG_DESC("asyncGetLatestBlock")
+            DISPATCHER_LOG(INFO) << LOG_DESC("asyncGetLatestBlock: dispatch block")
                                  << LOG_KV("consNum", item.block->blockHeader()->number())
                                  << LOG_KV("hash", item.block->blockHeader()->hash().abridged());
             _obtainedBlock = item.block;
