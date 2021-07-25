@@ -62,30 +62,30 @@ BOOST_AUTO_TEST_CASE(queue)
             {
                 usleep(during(rng));
 
-                dispatcher->asyncGetLatestBlock(
-                    [this, &receiveCount, &i](
-                        const Error::Ptr&, const protocol::Block::Ptr& block) {
-                        // BOOST_CHECK(block->blockHeader()->number() == i ||
-                        //             block->blockHeader()->number() - i == 1);
-                        BOOST_CHECK(block->blockHeader()->number() < 2000);
-                        ++receiveCount;
+                dispatcher->asyncGetLatestBlock([this, &receiveCount, &i](const Error::Ptr&,
+                                                    const protocol::Block::Ptr& block) {
+                    // BOOST_CHECK(block->blockHeader()->number() == i ||
+                    //             block->blockHeader()->number() - i == 1);
+                    BOOST_CHECK(block->blockHeader()->number() < 2000);
+                    ++receiveCount;
 
-                        if (block->blockHeader()->number() - i == 1)
-                        {
-                            i = block->blockHeader()->number();
-                        }
+                    if (block->blockHeader()->number() - i == 1)
+                    {
+                        i = block->blockHeader()->number();
+                    }
 
-                        // sim get and run tx
-                        dispatcher->asyncNotifyExecutionResult(
-                            nullptr, block->blockHeader(), [](const Error::Ptr& error) {
-                                if (error)
-                                {
-                                    BOOST_CHECK(error->errorCode() != -2);
-                                }
-                            });
-                    });
+                    // sim get and run tx
+                    dispatcher->asyncNotifyExecutionResult(nullptr, block->blockHeader()->hash(),
+                        block->blockHeader(), [](const Error::Ptr& error) {
+                            if (error)
+                            {
+                                BOOST_CHECK(error->errorCode() != -2);
+                            }
+                        });
+                });
 
-                if(i == 1999) {
+                if (i == 1999)
+                {
                     break;
                 }
             }
@@ -96,7 +96,7 @@ BOOST_AUTO_TEST_CASE(queue)
 
     auto testBlockHeader = testPBBlockHeader(cryptoSuite);
     testBlockHeader->setNumber(500);
-    dispatcher->asyncNotifyExecutionResult(nullptr, testBlockHeader,
+    dispatcher->asyncNotifyExecutionResult(nullptr, testBlockHeader->hash(), testBlockHeader,
         [](const Error::Ptr& error) { BOOST_CHECK_EQUAL(error->errorCode(), -1); });
 
     BOOST_CHECK_GE(receiveCount, sendCount);
