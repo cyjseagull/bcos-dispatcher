@@ -233,4 +233,25 @@ void DispatcherImpl::asyncNotifyExecutionResult(const Error::Ptr& _error,
 
 void DispatcherImpl::start() {}
 
-void DispatcherImpl::stop() {}
+void DispatcherImpl::stop()
+{
+    DISPATCHER_LOG(INFO) << LOG_DESC("stop the dispatcher");
+    // clear all the callbacks
+    // Note: here must call all the callback in case of the executor stucked at waiting the callback
+    std::list<std::function<void()>> callbacks;
+    {
+        WriteGuard l(x_blockQueue);
+        while (!m_waitingQueue.empty())
+        {
+            auto callback = m_waitingQueue.front();
+            m_waitingQueue.pop();
+            callbacks.push_back([callback]() {
+                callback(std::make_shared<Error>(-1, "the blockQueue is empty"), nullptr);
+            });
+        }
+    }
+    for (auto callback : callbacks)
+    {
+        callback();
+    }
+}
