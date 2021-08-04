@@ -97,6 +97,7 @@ void DispatcherImpl::asyncExecuteCompletedBlock(
                              << LOG_KV("hash", _block->blockHeader()->hash().abridged())
                              << LOG_KV("queueSize", m_blockQueue.size())
                              << LOG_KV("verify", _verify);
+        std::vector<Block::Ptr> blockQueueCache;
         while (!m_waitingQueue.empty() && !m_blockQueue.empty())
         {
             auto callback = m_waitingQueue.front();
@@ -104,11 +105,18 @@ void DispatcherImpl::asyncExecuteCompletedBlock(
             // Note: since the callback maybe uncalled for executor timeout, here can't pop the
             // block
             auto block = m_blockQueue.top();
+            blockQueueCache.push_back(block);
+            m_blockQueue.pop();
             DISPATCHER_LOG(INFO) << LOG_DESC(
                                         "asyncGetLatestBlock: dispatch block to the waiting queue")
                                  << LOG_KV("consNum", block->blockHeader()->number())
                                  << LOG_KV("hash", block->blockHeader()->hash().abridged());
             callbacks.push_back([callback, block]() { callback(nullptr, block); });
+        }
+        // repush the block into the blockQueue
+        for (size_t i = 0; i < blockQueueCache.size(); i++)
+        {
+            m_blockQueue.push(blockQueueCache[i]);
         }
     }
     for (auto callback : callbacks)
