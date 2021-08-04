@@ -132,6 +132,11 @@ void DispatcherImpl::asyncGetLatestBlock(
     bool existUnExecutedBlock = false;
     {
         WriteGuard l(x_blockQueue);
+        // clear the expired waiting queue
+        if (!m_waitingQueue.empty())
+        {
+            m_waitingQueue.pop();
+        }
         // get pending block to execute
         while (!m_blockQueue.empty())
         {
@@ -225,11 +230,24 @@ void DispatcherImpl::asyncNotifyExecutionResult(const Error::Ptr& _error,
             m_blockQueue = emptyQueue;
         }
     }
-    updateExecResultCache(_error, _orgHash, _header);
-
     // Note: must call the callback after the lock, in case of the callback retry to call
     // asyncExecuteBlock
-    callback(_error, _header);
+    auto cachedHeader = getExecResultCache(_orgHash);
+    if (_error && cachedHeader)
+    {
+        // the block has already been executed
+        callback(nullptr, cachedHeader);
+        DISPATCHER_LOG(WARNING)
+            << LOG_DESC("asyncNotifyExecutionResult: block execute failed, but hit the cache")
+            << LOG_KV("code", _error->errorCode()) << LOG_KV("msg", _error->errorMessage())
+            << LOG_KV("consNum", cachedHeader->number()) << LOG_KV("orgHash", _orgHash.abridged())
+            << LOG_KV("hashAfterExec", cachedHeader->hash().abridged());
+    }
+    else
+    {
+        callback(_error, _header);
+    }
+    updateExecResultCache(_error, _orgHash, _header);
 
     DISPATCHER_LOG(INFO) << LOG_DESC("asyncNotifyExecutionResult")
                          << LOG_KV("consNum", _header->number())
