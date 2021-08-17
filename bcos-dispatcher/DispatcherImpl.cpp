@@ -132,12 +132,14 @@ void DispatcherImpl::asyncGetLatestBlock(
     try
     {
         Block::Ptr _obtainedBlock = nullptr;
+        std::vector<std::function<void(const Error::Ptr&, const Block::Ptr&)>> expiredCallbacks;
         bool existUnExecutedBlock = false;
         {
             WriteGuard l(x_blockQueue);
             // clear the expired waiting queue
-            if (!m_waitingQueue.empty())
+            while (!m_waitingQueue.empty())
             {
+                expiredCallbacks.push_back(m_waitingQueue.front());
                 m_waitingQueue.pop();
             }
             // get pending block to execute
@@ -171,6 +173,14 @@ void DispatcherImpl::asyncGetLatestBlock(
                                  << LOG_KV("consNum", _obtainedBlock->blockHeader()->number())
                                  << LOG_KV(
                                         "hash", _obtainedBlock->blockHeader()->hash().abridged());
+        }
+        for (auto callback : expiredCallbacks)
+        {
+            if (callback)
+            {
+                callback(std::make_shared<Error>(-1, "there are no blocks in the current system."),
+                    nullptr);
+            }
         }
     }
     catch (std::exception const& e)
