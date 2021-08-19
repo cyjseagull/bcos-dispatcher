@@ -64,6 +64,10 @@ BOOST_AUTO_TEST_CASE(queue)
 
                 dispatcher->asyncGetLatestBlock([this, &receiveCount, &i](const Error::Ptr&,
                                                     const protocol::Block::Ptr& block) {
+                    if (!block)
+                    {
+                        return;
+                    }
                     // BOOST_CHECK(block->blockHeader()->number() == i ||
                     //             block->blockHeader()->number() - i == 1);
                     BOOST_CHECK(block->blockHeader()->number() < 2000);
