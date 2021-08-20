@@ -173,11 +173,6 @@ void DispatcherImpl::asyncGetLatestBlock(
                                  << LOG_KV(
                                         "hash", _obtainedBlock->blockHeader()->hash().abridged());
         }
-        if (expiredCallbacks.size() > 0)
-        {
-            DISPATCHER_LOG(INFO) << LOG_DESC("clear expiredCallbacks")
-                                 << LOG_KV("size", expiredCallbacks.size());
-        }
         for (auto callback : expiredCallbacks)
         {
             if (callback)
