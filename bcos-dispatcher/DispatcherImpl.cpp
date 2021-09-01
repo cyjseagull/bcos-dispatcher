@@ -21,8 +21,9 @@ void DispatcherImpl::asyncExecuteBlock(
         txsHashList->emplace_back(_block->transactionHash(i));
     }
     auto self = std::weak_ptr<DispatcherInterface>(shared_from_this());
-    m_txpool->asyncFillBlock(
-        txsHashList, [self, _block, _verify, _callback](Error::Ptr _error, TransactionsPtr _txs) {
+    auto startT = utcTime();
+    m_txpool->asyncFillBlock(txsHashList,
+        [self, startT, _block, _verify, _callback](Error::Ptr _error, TransactionsPtr _txs) {
             if (_error)
             {
                 DISPATCHER_LOG(ERROR)
@@ -46,8 +47,13 @@ void DispatcherImpl::asyncExecuteBlock(
                 {
                     _block->appendTransaction(tx);
                 }
+                auto fetchTxsTime = utcTime() - startT;
+                auto timeRecord = utcTime();
                 // calculate the txsRoot(TODO: async here to optimize the performance)
                 _block->calculateTransactionRoot(true);
+                DISPATCHER_LOG(INFO) << LOG_DESC("asyncExecuteBlock: fill block success")
+                                     << LOG_KV("fetchTxsTime", fetchTxsTime)
+                                     << LOG_KV("calculateTxsRootT", (utcTime() - timeRecord));
                 auto dispatcherImpl = std::dynamic_pointer_cast<DispatcherImpl>(dispatcher);
                 dispatcherImpl->asyncExecuteCompletedBlock(_block, _verify, _callback);
             }
@@ -177,8 +183,7 @@ void DispatcherImpl::asyncGetLatestBlock(
         {
             if (callback)
             {
-                callback(std::make_shared<Error>(-1, "there are no blocks in the current system."),
-                    nullptr);
+                callback(nullptr, nullptr);
             }
         }
     }
@@ -291,9 +296,7 @@ void DispatcherImpl::stop()
         {
             auto callback = m_waitingQueue.front();
             m_waitingQueue.pop();
-            callbacks.push_back([callback]() {
-                callback(std::make_shared<Error>(-1, "the blockQueue is empty"), nullptr);
-            });
+            callbacks.push_back([callback]() { callback(nullptr, nullptr); });
         }
     }
     for (auto callback : callbacks)
