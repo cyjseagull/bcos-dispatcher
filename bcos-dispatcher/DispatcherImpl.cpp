@@ -6,7 +6,7 @@ using namespace bcos::crypto;
 using namespace bcos::protocol;
 
 void DispatcherImpl::asyncExecuteBlock(
-    const Block::Ptr& _block, bool _verify, ExecutionResultCallback _callback)
+    const Block::Ptr& _block, bool _verify, ExecutionResultCallback _callback, ssize_t)
 {
     // with completed block
     if (_verify)

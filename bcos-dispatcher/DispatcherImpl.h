@@ -21,7 +21,7 @@ public:
     DispatcherImpl() = default;
     ~DispatcherImpl() override {}
     void asyncExecuteBlock(const protocol::Block::Ptr& _block, bool _verify,
-        ExecutionResultCallback _callback) override;
+        ExecutionResultCallback _callback, ssize_t _execTimeout = -1) override;
     void asyncGetLatestBlock(
         std::function<void(const Error::Ptr&, const protocol::Block::Ptr&)> _callback) override;
 
