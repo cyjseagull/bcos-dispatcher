@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-set (URL_BASE "github.com.cnpmjs.org")
+set (URL_BASE "github.com")
 set (DEPENDENCIES_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
 include(FetchContent)

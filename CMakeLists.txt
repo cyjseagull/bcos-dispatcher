@@ -4,11 +4,11 @@ cmake_minimum_required(VERSION 3.15)
 include (Dependencies.cmake)
 include(HunterGate)
 HunterGate(
-    URL "https://${URL_BASE}/FISCO-BCOS/hunter/archive/7268240de829ba351c98d574db9dd7dfddb1ad2e.tar.gz"
-    SHA1 "29a725d3fac8b23f255530b7e40ffb47b34973f9"
+    URL "https://${URL_BASE}/FISCO-BCOS/hunter/archive/9ea365415828102627dcc933295e25e8feff7d93.tar.gz"
+    SHA1 "b40d19ddd9939f557b70c69e45f8744ff17583ba"
     FILEPATH "${CMAKE_SOURCE_DIR}/hunterConfig.cmake"
 )
-project(bcos-dispatcher VERSION "3.0.0")
+project(bcos-scheduler VERSION "3.0.0")
 set(VERSION_SUFFIX "")
 
 # basic settings
@@ -23,8 +23,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 # install dependencies
 include(InstallBcosFrameworkDependencies)
 
-set(BCOS_DISPATCHER_TARGET "dispatcher")
-add_subdirectory(bcos-dispatcher)
+set(BCOS_DISPATCHER_TARGET "scheduler")
+add_subdirectory(bcos-scheduler)
 
 # install bcos-dispatcher target
 include(InstallConfig)
@@ -40,6 +40,12 @@ install(
 set(DESTINATION_INCLUDE_DIR "${CMAKE_INSTALL_INCLUDEDIR}")
 install(
     DIRECTORY "bcos-dispatcher"
+    DESTINATION "${DESTINATION_INCLUDE_DIR}"
+    FILES_MATCHING PATTERN "*.h"
+)
+
+install(
+    DIRECTORY "bcos-scheduler"
     DESTINATION "${DESTINATION_INCLUDE_DIR}"
     FILES_MATCHING PATTERN "*.h"
 )
