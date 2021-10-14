@@ -89,7 +89,7 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
 {
     SCHEDULER_LOG(INFO) << "CommitBlock request" << LOG_KV("block number", header->number());
 
-    auto commitLock = std::unique_lock<std::mutex>(m_commitMutex, std::try_to_lock);
+    std::unique_lock<std::mutex> commitLock(m_commitMutex, std::try_to_lock);
     if (!commitLock.owns_lock())
     {
         auto message = "Another block is commiting!";

@@ -103,6 +103,9 @@ BOOST_AUTO_TEST_CASE(executeBlock)
             executedHeader = std::move(header);
         });
 
+    BOOST_CHECK(executedHeader);
+    BOOST_CHECK_NE(executedHeader->stateRoot(), h256());
+
     scheduler->commitBlock(
         executedHeader, [&](bcos::Error::Ptr&& error, bcos::ledger::LedgerConfig::Ptr&& config) {
             BOOST_CHECK(!error);

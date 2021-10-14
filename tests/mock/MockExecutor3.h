@@ -13,6 +13,8 @@ class MockParallelExecutor3 : public MockParallelExecutor
 public:
     MockParallelExecutor3(const std::string& name) : MockParallelExecutor(name) {}
 
+    ~MockParallelExecutor3() override {}
+
     void executeTransaction(bcos::protocol::ExecutionMessage::UniquePtr input,
         std::function<void(bcos::Error::UniquePtr&&, bcos::protocol::ExecutionMessage::UniquePtr&&)>
             callback) noexcept override
@@ -69,6 +71,14 @@ public:
                 (it.second)();
             }
         }
+    }
+
+    void getHash(bcos::protocol::BlockNumber number,
+        std::function<void(bcos::Error::UniquePtr&&, crypto::HashType&&)> callback) noexcept
+        override
+    {
+        BOOST_CHECK_GT(number, 0);
+        callback(nullptr, h256(255));
     }
 
     std::map<std::string, std::function<void()>> batchContracts;

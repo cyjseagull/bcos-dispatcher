@@ -8,6 +8,7 @@ namespace bcos::test
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 class MockLedger : public bcos::ledger::LedgerInterface
 {
+public:
     void asyncPrewriteBlock(bcos::storage::StorageInterface::Ptr storage,
         bcos::protocol::Block::ConstPtr block, std::function<void(Error::Ptr&&)> callback)
     {}

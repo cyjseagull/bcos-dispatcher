@@ -56,8 +56,9 @@ private:
         std::atomic_size_t failed = 0;
         std::function<void(const CommitStatus&)> checkAndCommit;
     };
-    void asyncBlockCommit(std::function<void(Error::UniquePtr&&)> callback) noexcept;
-    void asyncBlockRollback(std::function<void(Error::UniquePtr&&)> callback) noexcept;
+    void asyncGetHashes(std::function<void(Error::UniquePtr&&, crypto::HashType)> callback);
+    void asyncBlockCommit(std::function<void(Error::UniquePtr&&)> callback);
+    void asyncBlockRollback(std::function<void(Error::UniquePtr&&)> callback);
 
     struct BatchStatus  // Batch state per batch
     {
@@ -70,7 +71,7 @@ private:
     };
     void startBatch(std::function<void(Error::UniquePtr&&)> callback);
     void checkBatch(BatchStatus& status);
-    protocol::BlockHeader::Ptr generateResultBlockHeader();
+    protocol::BlockHeader::Ptr generateResultBlockHeader(crypto::HashType hash);
 
     std::string newEVMAddress(
         const std::string_view& sender, int64_t blockNumber, int64_t contextID);

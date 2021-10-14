@@ -105,10 +105,29 @@ void BlockExecutive::asyncExecute(
             }
             else
             {
-                // All Transaction finished
-                m_self->m_result = m_self->generateResultBlockHeader();
+                // // Get the hash
+                // for (auto& it : m_self->m_calledExecutor)
+                // {
+                //     it->getHash(m_self->number(), [](bcos::Error::UniquePtr&&,
+                //     crypto::HashType&&) {
 
-                m_callback(nullptr, m_self->m_result);
+                //     });
+                // }
+
+                // All Transaction finished, get hash
+                m_self->asyncGetHashes([self = m_self, callback = std::move(m_callback)](
+                                           Error::UniquePtr&& error, crypto::HashType hash) {
+                    if (error)
+                    {
+                        callback(BCOS_ERROR_WITH_PREV_UNIQUE_PTR(
+                                     SchedulerError::UnknownError, "Unknown error", *error),
+                            nullptr);
+                        return;
+                    }
+
+                    self->m_result = self->generateResultBlockHeader(std::move(hash));
+                    callback(nullptr, self->m_result);
+                });
             }
         }
 
@@ -221,7 +240,59 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr&&)> callbac
         });
 }
 
-void BlockExecutive::asyncBlockCommit(std::function<void(Error::UniquePtr&&)> callback) noexcept
+void BlockExecutive::asyncGetHashes(
+    std::function<void(bcos::Error::UniquePtr&&, bcos::crypto::HashType)> callback)
+{
+    auto mutex = std::make_shared<std::mutex>();
+    auto totalHash = std::make_shared<h256>();
+
+    auto status = std::make_shared<CommitStatus>();
+    status->total = m_calledExecutor.size();  // self + all executors
+    status->checkAndCommit = [this, totalHash, callback = std::move(callback)](
+                                 const CommitStatus& status) {
+        if (status.success + status.failed < status.total)
+        {
+            return;
+        }
+
+        if (status.failed > 0)
+        {
+            auto message = "Commit block:" + boost::lexical_cast<std::string>(number()) +
+                           " with errors! " + boost::lexical_cast<std::string>(status.failed);
+            SCHEDULER_LOG(WARNING) << message;
+
+            callback(
+                BCOS_ERROR_UNIQUE_PTR(SchedulerError::CommitError, std::move(message)), h256(0));
+            return;
+        }
+
+        callback(nullptr, std::move(*totalHash));
+    };
+
+    for (auto& it : m_calledExecutor)
+    {
+        it->getHash(number(),
+            [status, mutex, totalHash](bcos::Error::Ptr&& error, crypto::HashType&& hash) {
+                if (error)
+                {
+                    SCHEDULER_LOG(ERROR)
+                        << "Commit executor error!" << boost::diagnostic_information(*error);
+                    ++status->failed;
+                }
+                else
+                {
+                    ++status->success;
+
+                    std::unique_lock<std::mutex> lock(*mutex);
+                    *totalHash ^= hash;
+                }
+
+                status->checkAndCommit(*status);
+            });
+    }
+}
+
+void BlockExecutive::asyncBlockCommit(std::function<void(Error::UniquePtr&&)> callback)
 {
     auto status = std::make_shared<CommitStatus>();
     status->total = 1 + m_calledExecutor.size();  // self + all executors
@@ -281,7 +352,7 @@ void BlockExecutive::asyncBlockCommit(std::function<void(Error::UniquePtr&&)> ca
     }
 }
 
-void BlockExecutive::asyncBlockRollback(std::function<void(Error::UniquePtr&&)> callback) noexcept
+void BlockExecutive::asyncBlockRollback(std::function<void(Error::UniquePtr&&)> callback)
 {
     auto status = std::make_shared<CommitStatus>();
     status->total = 1 + m_calledExecutor.size();  // self + all executors
@@ -429,6 +500,7 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr&&)> callback
 
         ++batchStatus->total;
         auto executor = m_scheduler->m_executorManager->dispatchExecutor(it->message->to());
+        m_calledExecutor.emplace(executor);
         executor->executeTransaction(
             std::move(it->message), [this, it, batchStatus](bcos::Error::UniquePtr&& error,
                                         bcos::protocol::ExecutionMessage::UniquePtr&& response) {
@@ -494,7 +566,7 @@ void BlockExecutive::checkBatch(BatchStatus& status)
     }
 }
 
-bcos::protocol::BlockHeader::Ptr BlockExecutive::generateResultBlockHeader()
+bcos::protocol::BlockHeader::Ptr BlockExecutive::generateResultBlockHeader(crypto::HashType hash)
 {
     auto blockHeader =
         m_scheduler->m_blockHeaderFactory->createBlockHeader(m_block->blockHeaderConst()->number());
@@ -503,7 +575,7 @@ bcos::protocol::BlockHeader::Ptr BlockExecutive::generateResultBlockHeader()
     blockHeader->setVersion(currentBlockHeader->version());
     blockHeader->setTxsRoot(currentBlockHeader->txsRoot());
     blockHeader->setReceiptsRoot(currentBlockHeader->receiptsRoot());
-    blockHeader->setStateRoot(h256(1));  // TODO: calc the state root
+    blockHeader->setStateRoot(std::move(hash));  // TODO: calc the state root
     blockHeader->setNumber(currentBlockHeader->number());
     blockHeader->setGasUsed(m_gasUsed);
     blockHeader->setTimestamp(currentBlockHeader->timestamp());
