@@ -33,33 +33,31 @@ public:
     SchedulerImpl& operator=(const SchedulerImpl&) = delete;
     SchedulerImpl& operator=(SchedulerImpl&&) = delete;
 
-    // by pbft & sync
     void executeBlock(bcos::protocol::Block::Ptr block, bool verify,
-        std::function<void(bcos::Error::Ptr&&, bcos::protocol::BlockHeader::Ptr&&)>
-            callback) noexcept override;
+        std::function<void(bcos::Error::Ptr&&, bcos::protocol::BlockHeader::Ptr&&)> callback)
+        override;
 
-    // by pbft & sync
     void commitBlock(bcos::protocol::BlockHeader::Ptr header,
-        std::function<void(bcos::Error::Ptr&&, bcos::ledger::LedgerConfig::Ptr&&)>
-            callback) noexcept override;
+        std::function<void(bcos::Error::Ptr&&, bcos::ledger::LedgerConfig::Ptr&&)> callback)
+        override;
 
-    // by console, query committed committing executing
-    void status(std::function<void(Error::Ptr&&, bcos::protocol::Session::ConstPtr&&)>
-            callback) noexcept override;
+    void status(
+        std::function<void(Error::Ptr&&, bcos::protocol::Session::ConstPtr&&)> callback) override;
 
-    // by rpc
     void call(protocol::Transaction::Ptr tx,
-        std::function<void(Error::Ptr&&, protocol::TransactionReceipt::Ptr&&)>) noexcept override;
+        std::function<void(Error::Ptr&&, protocol::TransactionReceipt::Ptr&&)>) override;
 
-    // by executor
     void registerExecutor(std::string name,
         bcos::executor::ParallelTransactionExecutorInterface::Ptr executor,
-        std::function<void(Error::Ptr&&)> callback) noexcept override;
+        std::function<void(Error::Ptr&&)> callback) override;
 
     void unregisterExecutor(
-        const std::string& name, std::function<void(Error::Ptr&&)> callback) noexcept override;
+        const std::string& name, std::function<void(Error::Ptr&&)> callback) override;
 
-    void reset(std::function<void(Error::Ptr&&)> callback) noexcept override;
+    void reset(std::function<void(Error::Ptr&&)> callback) override;
+
+    void registerBlockNumberReceiver(
+        std::function<void(protocol::BlockNumber blockNumber)> callback) override;
 
 private:
     void asyncGetLedgerConfig(
@@ -77,5 +75,7 @@ private:
     bcos::protocol::ExecutionMessageFactory::Ptr m_executionMessageFactory;
     bcos::protocol::TransactionReceiptFactory::Ptr m_transactionReceiptFactory;
     bcos::crypto::Hash::Ptr m_hashImpl;
+
+    std::function<void(protocol::BlockNumber blockNumber)> m_blockNumberReceiver;
 };
 }  // namespace bcos::scheduler

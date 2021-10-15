@@ -82,12 +82,32 @@ public:
         }
     }
 
+    void prepare(const TwoPCParams& params,
+        std::function<void(bcos::Error::Ptr&&)> callback) noexcept override
+    {
+        BOOST_CHECK_EQUAL(params.number, 100);
+        callback(nullptr);
+    }
+
+    void commit(const TwoPCParams& params,
+        std::function<void(bcos::Error::Ptr&&)> callback) noexcept override
+    {
+        BOOST_CHECK_EQUAL(params.number, 100);
+        callback(nullptr);
+    }
+
+    void rollback(const TwoPCParams& params,
+        std::function<void(bcos::Error::Ptr&&)> callback) noexcept override
+    {
+        BOOST_CHECK_EQUAL(params.number, 100);
+        callback(nullptr);
+    }
 
     void getHash(bcos::protocol::BlockNumber number,
         std::function<void(bcos::Error::UniquePtr&&, crypto::HashType&&)> callback) noexcept
         override
     {
-        BOOST_CHECK_GT(number, 0);
+        BOOST_CHECK_EQUAL(number, 100);
         callback(nullptr, h256(255));
     }
 

@@ -4,6 +4,7 @@
 #include "interfaces/executor/ExecutionMessage.h"
 #include "interfaces/ledger/LedgerInterface.h"
 #include "interfaces/protocol/BlockHeaderFactory.h"
+#include "interfaces/protocol/ProtocolTypeDef.h"
 #include "interfaces/protocol/TransactionReceiptFactory.h"
 #include "interfaces/storage/StorageInterface.h"
 #include "mock/MockExecutor.h"
@@ -111,6 +112,10 @@ BOOST_AUTO_TEST_CASE(executeBlock)
     BOOST_CHECK(executedHeader);
     BOOST_CHECK_NE(executedHeader->stateRoot(), h256());
 
+    bcos::protocol::BlockNumber notifyBlockNumber = 0;
+    scheduler->registerBlockNumberReceiver(
+        [&](protocol::BlockNumber number) { notifyBlockNumber = number; });
+
     bool commited = false;
     scheduler->commitBlock(
         executedHeader, [&](bcos::Error::Ptr&& error, bcos::ledger::LedgerConfig::Ptr&& config) {
@@ -127,6 +132,7 @@ BOOST_AUTO_TEST_CASE(executeBlock)
         });
 
     BOOST_CHECK(commited);
+    BOOST_CHECK_EQUAL(notifyBlockNumber, 100);
 }
 
 BOOST_AUTO_TEST_CASE(registerExecutor)

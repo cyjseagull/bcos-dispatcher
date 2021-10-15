@@ -249,6 +249,7 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr&&)> callbac
             for (auto& it : *(m_scheduler->m_executorManager))
             {
                 executor::ParallelTransactionExecutorInterface::TwoPCParams executorParams;
+                executorParams.number = number();
                 it->prepare(executorParams, [status](Error::Ptr&& error) {
                     if (error)
                     {
@@ -384,6 +385,7 @@ void BlockExecutive::batchBlockCommit(std::function<void(Error::UniquePtr&&)> ca
     };
 
     storage::TransactionalStorageInterface::TwoPCParams params;
+    params.number = number();
     m_scheduler->m_storage->asyncCommit(params, [status](Error::Ptr&& error) {
         if (error)
         {
@@ -403,6 +405,7 @@ void BlockExecutive::batchBlockCommit(std::function<void(Error::UniquePtr&&)> ca
     for (auto& it : *(m_scheduler->m_executorManager))
     {
         executor::ParallelTransactionExecutorInterface::TwoPCParams executorParams;
+        executorParams.number = number();
         it->commit(executorParams, [status](bcos::Error::Ptr&& error) {
             if (error)
             {

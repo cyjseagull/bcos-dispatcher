@@ -12,7 +12,7 @@
 using namespace bcos::scheduler;
 
 void SchedulerImpl::executeBlock(bcos::protocol::Block::Ptr block, bool verify,
-    std::function<void(bcos::Error::Ptr&&, bcos::protocol::BlockHeader::Ptr&&)> callback) noexcept
+    std::function<void(bcos::Error::Ptr&&, bcos::protocol::BlockHeader::Ptr&&)> callback)
 {
     SCHEDULER_LOG(INFO) << "ExecuteBlock request"
                         << LOG_KV("block number", block->blockHeaderConst()->number())
@@ -87,9 +87,8 @@ void SchedulerImpl::executeBlock(bcos::protocol::Block::Ptr block, bool verify,
     });
 }
 
-// by pbft & sync
 void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
-    std::function<void(bcos::Error::Ptr&&, bcos::ledger::LedgerConfig::Ptr&&)> callback) noexcept
+    std::function<void(bcos::Error::Ptr&&, bcos::ledger::LedgerConfig::Ptr&&)> callback)
 {
     SCHEDULER_LOG(INFO) << "CommitBlock request" << LOG_KV("block number", header->number());
 
@@ -157,24 +156,33 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
                 return;
             }
 
+            SCHEDULER_LOG(INFO) << "Commit block success"
+                                << LOG_KV("block number", ledgerConfig->blockNumber());
+
             std::unique_lock<std::mutex> blocksLock(m_blocksMutex);
             m_blocks.pop_front();
 
+            SCHEDULER_LOG(DEBUG) << "Remove committed block: " << ledgerConfig->blockNumber()
+                                 << " success";
+
+            auto blockNumber = ledgerConfig->blockNumber();
             callback(nullptr, std::move(ledgerConfig));
+            if (m_blockNumberReceiver)
+            {
+                m_blockNumberReceiver(blockNumber);
+            }
         });
     });
 }
 
-// by console, query committed committing executing
 void SchedulerImpl::status(
-    std::function<void(Error::Ptr&&, bcos::protocol::Session::ConstPtr&&)> callback) noexcept
+    std::function<void(Error::Ptr&&, bcos::protocol::Session::ConstPtr&&)> callback)
 {
     (void)callback;
 }
 
-// by rpc
 void SchedulerImpl::call(protocol::Transaction::Ptr tx,
-    std::function<void(Error::Ptr&&, protocol::TransactionReceipt::Ptr&&)> callback) noexcept
+    std::function<void(Error::Ptr&&, protocol::TransactionReceipt::Ptr&&)> callback)
 {
     (void)tx;
     (void)callback;
@@ -182,7 +190,7 @@ void SchedulerImpl::call(protocol::Transaction::Ptr tx,
 
 void SchedulerImpl::registerExecutor(std::string name,
     bcos::executor::ParallelTransactionExecutorInterface::Ptr executor,
-    std::function<void(Error::Ptr&&)> callback) noexcept
+    std::function<void(Error::Ptr&&)> callback)
 {
     try
     {
@@ -201,15 +209,21 @@ void SchedulerImpl::registerExecutor(std::string name,
 }
 
 void SchedulerImpl::unregisterExecutor(
-    const std::string& name, std::function<void(Error::Ptr&&)> callback) noexcept
+    const std::string& name, std::function<void(Error::Ptr&&)> callback)
 {
     (void)name;
     (void)callback;
 }
 
-void SchedulerImpl::reset(std::function<void(Error::Ptr&&)> callback) noexcept
+void SchedulerImpl::reset(std::function<void(Error::Ptr&&)> callback)
 {
     (void)callback;
+}
+
+void SchedulerImpl::registerBlockNumberReceiver(
+    std::function<void(protocol::BlockNumber blockNumber)> callback)
+{
+    m_blockNumberReceiver = std::move(callback);
 }
 
 template <class... Ts>
