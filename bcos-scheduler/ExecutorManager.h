@@ -6,7 +6,9 @@
 #include <tbb/concurrent_unordered_set.h>
 #include <tbb/parallel_for.h>
 #include <boost/iterator/iterator_categories.hpp>
+#include <boost/iterator/transform_iterator.hpp>
 #include <boost/range/any_range.hpp>
+#include <functional>
 #include <iterator>
 #include <queue>
 #include <shared_mutex>
@@ -27,6 +29,20 @@ public:
         const std::string_view& contract);
 
     void removeExecutor(const std::string_view& name);
+
+    auto begin() const
+    {
+        return boost::make_transform_iterator(m_name2Executors.cbegin(),
+            std::bind(&ExecutorManager::executorView, this, std::placeholders::_1));
+    }
+
+    auto end() const
+    {
+        return boost::make_transform_iterator(m_name2Executors.cend(),
+            std::bind(&ExecutorManager::executorView, this, std::placeholders::_1));
+    }
+
+    size_t size() const { return m_name2Executors.size(); }
 
 private:
     struct ExecutorInfo
@@ -53,5 +69,11 @@ private:
     std::priority_queue<ExecutorInfo::Ptr, std::vector<ExecutorInfo::Ptr>, ExecutorInfoComp>
         m_executorPriorityQueue;
     std::shared_mutex m_mutex;
+
+    bcos::executor::ParallelTransactionExecutorInterface::Ptr const& executorView(
+        const decltype(m_name2Executors)::value_type& value) const
+    {
+        return value.second->executor;
+    }
 };
 }  // namespace bcos::scheduler

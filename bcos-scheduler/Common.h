@@ -10,6 +10,7 @@ enum SchedulerError
     InvalidStatus,
     InvalidBlockNumber,
     InvalidBlocks,
+    NextBlockError,
     PrewriteBlockError,
     CommitError,
     RollbackError,

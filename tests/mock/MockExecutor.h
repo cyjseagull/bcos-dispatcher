@@ -1,4 +1,5 @@
 #pragma once
+#include "bcos-scheduler/Common.h"
 #include "interfaces/executor/ParallelTransactionExecutorInterface.h"
 #include "interfaces/protocol/ProtocolTypeDef.h"
 #include <boost/test/unit_test.hpp>
@@ -19,6 +20,7 @@ public:
     void nextBlockHeader(const bcos::protocol::BlockHeader::ConstPtr& blockHeader,
         std::function<void(bcos::Error::UniquePtr&&)> callback) noexcept override
     {
+        SCHEDULER_LOG(TRACE) << "Receiving nextBlock: " << blockHeader->number();
         m_blockNumber = blockHeader->number();
         callback(nullptr);  // always success
     }
@@ -58,15 +60,21 @@ public:
 
     void prepare(const TwoPCParams& params,
         std::function<void(bcos::Error::Ptr&&)> callback) noexcept override
-    {}
+    {
+        callback(nullptr);
+    }
 
     void commit(const TwoPCParams& params,
         std::function<void(bcos::Error::Ptr&&)> callback) noexcept override
-    {}
+    {
+        callback(nullptr);
+    }
 
     void rollback(const TwoPCParams& params,
         std::function<void(bcos::Error::Ptr&&)> callback) noexcept override
-    {}
+    {
+        callback(nullptr);
+    }
 
     void reset(std::function<void(bcos::Error::Ptr&&)> callback) noexcept override {}
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bcos-framework/interfaces/ledger/LedgerInterface.h"
 #include "bcos-framework/interfaces/storage/StorageInterface.h"
 #include "bcos-framework/libstorage/StateStorage.h"
 
@@ -33,6 +34,27 @@ public:
         std::function<void(Error::UniquePtr&&, std::vector<std::optional<storage::Entry>>&&)>
             _callback) noexcept override
     {
+        // if(table == ledge)
+        if (table == ledger::SYS_CONFIG)
+        {
+            // Return 3 dataes
+            std::vector<std::optional<storage::Entry>> result;
+            storage::Entry entry1;
+            entry1.importFields({"100"});
+            result.emplace_back(std::move(entry1));
+
+            storage::Entry entry2;
+            entry2.importFields({"200"});
+            result.emplace_back(std::move(entry2));
+
+            storage::Entry entry3;
+            entry3.importFields({"300"});
+            result.emplace_back(std::move(entry3));
+
+            _callback(nullptr, std::move(result));
+            return;
+        }
+
         m_storage->asyncGetRows(table, _keys, std::move(_callback));
     }
 

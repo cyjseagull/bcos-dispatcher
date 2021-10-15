@@ -22,9 +22,18 @@ public:
         BOOST_CHECK_EQUAL(input->type(), protocol::ExecutionMessage::TXHASH);
         BOOST_CHECK_GE(input->contextID(), 0);
 
+        // if (input->transactionHash() == h256(9))
+        // {
+        //     BOOST_CHECK(input->to().find("contract") == std::string::npos);
+        // }
+
         // Always success
-        SCHEDULER_LOG(TRACE) << "Input:" << input.get() << " to:" << input->to();
+        SCHEDULER_LOG(TRACE) << "Input, hash:" << input->transactionHash().hex()
+                             << " contract:" << input.get() << " to:" << input->to();
         BOOST_CHECK(input);
+        BOOST_CHECK(!input->to().empty());
+        BOOST_CHECK_EQUAL(input->depth(), 0);
+        BOOST_CHECK_EQUAL(input->gasAvailable(), 3000000);
 
         input->setType(bcos::protocol::ExecutionMessage::FINISHED);
         input->setStatus(0);
@@ -72,6 +81,7 @@ public:
             }
         }
     }
+
 
     void getHash(bcos::protocol::BlockNumber number,
         std::function<void(bcos::Error::UniquePtr&&, crypto::HashType&&)> callback) noexcept

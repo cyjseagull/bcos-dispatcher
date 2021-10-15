@@ -35,7 +35,19 @@ void BlockExecutive::asyncExecute(
             message->setType(protocol::ExecutionMessage::TXHASH);
             message->setTransactionHash(metaData->hash());
 
-            message->setTo(std::string(metaData->to()));
+            if (metaData->to().empty())
+            {
+                message->setTo(newEVMAddress(m_block->blockHeaderConst()->number(), i, 0));
+                message->setCreate(true);
+            }
+            else
+            {
+                message->setTo(std::string(metaData->to()));
+                message->setCreate(false);
+            }
+            message->setDepth(0);
+            message->setGasAvailable(3000000);  // TODO: add const var
+            message->setStaticCall(false);
 
             m_executiveStates.emplace_back(i, std::move(message));
         }
@@ -60,8 +72,7 @@ void BlockExecutive::asyncExecute(
 
             if (tx->to().empty())
             {
-                message->setTo(
-                    newEVMAddress(message->from(), m_block->blockHeaderConst()->number(), 0));
+                message->setTo(newEVMAddress(m_block->blockHeaderConst()->number(), i, 0));
                 message->setCreate(true);
             }
             else
@@ -79,66 +90,80 @@ void BlockExecutive::asyncExecute(
         }
     }
 
-    class BatchCallback : public std::enable_shared_from_this<BatchCallback>
-    {
-    public:
-        BatchCallback(BlockExecutive* self,
-            std::function<void(Error::UniquePtr&&, protocol::BlockHeader::Ptr)> callback)
-          : m_self(self), m_callback(std::move(callback))
-        {}
-
-        void operator()(Error::UniquePtr&& error) const
+    // Execute nextBlock
+    batchNextBlock([this, callback = std::move(callback)](Error::UniquePtr&& error) {
+        if (error)
         {
-            if (error)
-            {
-                m_callback(
-                    BCOS_ERROR_WITH_PREV_UNIQUE_PTR(-1, "Execute with errors", *error), nullptr);
-                return;
-            }
-
-            if (!m_self->m_executiveStates.empty())
-            {
-                m_self->m_calledContract.clear();
-
-                m_self->startBatch(std::bind(
-                    &BatchCallback::operator(), shared_from_this(), std::placeholders::_1));
-            }
-            else
-            {
-                // // Get the hash
-                // for (auto& it : m_self->m_calledExecutor)
-                // {
-                //     it->getHash(m_self->number(), [](bcos::Error::UniquePtr&&,
-                //     crypto::HashType&&) {
-
-                //     });
-                // }
-
-                // All Transaction finished, get hash
-                m_self->asyncGetHashes([self = m_self, callback = std::move(m_callback)](
-                                           Error::UniquePtr&& error, crypto::HashType hash) {
-                    if (error)
-                    {
-                        callback(BCOS_ERROR_WITH_PREV_UNIQUE_PTR(
-                                     SchedulerError::UnknownError, "Unknown error", *error),
-                            nullptr);
-                        return;
-                    }
-
-                    self->m_result = self->generateResultBlockHeader(std::move(hash));
-                    callback(nullptr, self->m_result);
-                });
-            }
+            SCHEDULER_LOG(ERROR) << "Next block with error!"
+                                 << boost::diagnostic_information(*error);
+            callback(BCOS_ERROR_WITH_PREV_UNIQUE_PTR(
+                         SchedulerError::NextBlockError, "Next block error!", *error),
+                nullptr);
+            return;
         }
 
-    private:
-        BlockExecutive* m_self;
-        std::function<void(Error::UniquePtr&&, protocol::BlockHeader::Ptr)> m_callback;
-    };
+        class BatchCallback : public std::enable_shared_from_this<BatchCallback>
+        {
+        public:
+            BatchCallback(BlockExecutive* self,
+                std::function<void(Error::UniquePtr&&, protocol::BlockHeader::Ptr)> callback)
+              : m_self(self), m_callback(std::move(callback))
+            {}
 
-    auto batchCallback = std::make_shared<BatchCallback>(this, std::move(callback));
+            void operator()(Error::UniquePtr&& error) const
+            {
+                if (error)
+                {
+                    m_callback(BCOS_ERROR_WITH_PREV_UNIQUE_PTR(-1, "Execute with errors", *error),
+                        nullptr);
+                    return;
+                }
 
-    startBatch(std::bind(&BatchCallback::operator(), batchCallback, std::placeholders::_1));
+                if (!m_self->m_executiveStates.empty())
+                {
+                    m_self->m_calledContract.clear();
+
+                    m_self->startBatch(std::bind(
+                        &BatchCallback::operator(), shared_from_this(), std::placeholders::_1));
+                }
+                else
+                {
+                    // All Transaction finished, get hash
+                    m_self->batchGetHashes([self = m_self, callback = std::move(m_callback)](
+                                               Error::UniquePtr&& error, crypto::HashType hash) {
+                        if (error)
+                        {
+                            callback(BCOS_ERROR_WITH_PREV_UNIQUE_PTR(
+                                         SchedulerError::UnknownError, "Unknown error", *error),
+                                nullptr);
+                            return;
+                        }
+
+                        // Set result to m_block
+                        for (auto& it : self->m_executiveResults)
+                        {
+                            self->m_block->appendReceipt(std::move(it.receipt));
+                        }
+
+                        self->m_block->blockHeader()->setStateRoot(std::move(hash));
+                        self->m_block->blockHeader()->setGasUsed(self->m_gasUsed);
+                        self->m_block->blockHeader()->setReceiptsRoot(h256(0));  // TODO: calc the
+                                                                                 // receipt root
+
+                        self->m_result = self->m_block->blockHeader();
+                        callback(nullptr, self->m_result);
+                    });
+                }
+            }
+
+        private:
+            BlockExecutive* m_self;
+            std::function<void(Error::UniquePtr&&, protocol::BlockHeader::Ptr)> m_callback;
+        };
+
+        auto batchCallback = std::make_shared<BatchCallback>(this, std::move(callback));
+        startBatch(std::bind(&BatchCallback::operator(), batchCallback, std::placeholders::_1));
+    });
 }
 
 void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr&&)> callback) noexcept
@@ -157,7 +182,7 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr&&)> callbac
             }
 
             auto status = std::make_shared<CommitStatus>();
-            status->total = 1 + m_calledExecutor.size();  // self + all executors
+            status->total = 1 + m_scheduler->m_executorManager->size();  // self + all executors
             status->checkAndCommit = [this, callback = std::move(callback)](
                                          const CommitStatus& status) {
                 if (status.success + status.failed < status.total)
@@ -170,7 +195,7 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr&&)> callbac
                     SCHEDULER_LOG(WARNING) << "Prepare with errors! " +
                                                   boost::lexical_cast<std::string>(status.failed);
 
-                    asyncBlockRollback([this, callback](Error::UniquePtr&& error) {
+                    batchBlockRollback([this, callback](Error::UniquePtr&& error) {
                         if (error)
                         {
                             SCHEDULER_LOG(ERROR)
@@ -186,7 +211,7 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr&&)> callbac
                     return;
                 }
 
-                asyncBlockCommit([this, callback](Error::UniquePtr&& error) {
+                batchBlockCommit([this, callback](Error::UniquePtr&& error) {
                     if (error)
                     {
                         SCHEDULER_LOG(ERROR)
@@ -221,7 +246,7 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr&&)> callbac
                     status->checkAndCommit(*status);
                 });
 
-            for (auto& it : m_calledExecutor)
+            for (auto& it : *(m_scheduler->m_executorManager))
             {
                 executor::ParallelTransactionExecutorInterface::TwoPCParams executorParams;
                 it->prepare(executorParams, [status](Error::Ptr&& error) {
@@ -240,14 +265,57 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr&&)> callbac
         });
 }
 
-void BlockExecutive::asyncGetHashes(
+void BlockExecutive::batchNextBlock(std::function<void(Error::UniquePtr&&)> callback)
+{
+    auto status = std::make_shared<CommitStatus>();
+    status->total = m_scheduler->m_executorManager->size();
+    status->checkAndCommit = [this, callback = std::move(callback)](const CommitStatus& status) {
+        if (status.success + status.failed < status.total)
+        {
+            return;
+        }
+
+        if (status.failed > 0)
+        {
+            auto message = "Next block:" + boost::lexical_cast<std::string>(number()) +
+                           " with errors! " + boost::lexical_cast<std::string>(status.failed);
+            SCHEDULER_LOG(ERROR) << message;
+
+            callback(BCOS_ERROR_UNIQUE_PTR(SchedulerError::UnknownError, std::move(message)));
+            return;
+        }
+
+        callback(nullptr);
+    };
+
+    for (auto& it : *(m_scheduler->m_executorManager))
+    {
+        SCHEDULER_LOG(TRACE) << "NextBlock for executor: " << it.get();
+        it->nextBlockHeader(m_block->blockHeaderConst(), [status](bcos::Error::Ptr&& error) {
+            if (error)
+            {
+                SCHEDULER_LOG(ERROR)
+                    << "Nextblock executor error!" << boost::diagnostic_information(*error);
+                ++status->failed;
+            }
+            else
+            {
+                ++status->success;
+            }
+
+            status->checkAndCommit(*status);
+        });
+    }
+}
+
+void BlockExecutive::batchGetHashes(
     std::function<void(bcos::Error::UniquePtr&&, bcos::crypto::HashType)> callback)
 {
     auto mutex = std::make_shared<std::mutex>();
     auto totalHash = std::make_shared<h256>();
 
     auto status = std::make_shared<CommitStatus>();
-    status->total = m_calledExecutor.size();  // self + all executors
+    status->total = m_scheduler->m_executorManager->size();  // all executors
     status->checkAndCommit = [this, totalHash, callback = std::move(callback)](
                                  const CommitStatus& status) {
         if (status.success + status.failed < status.total)
@@ -269,7 +337,7 @@ void BlockExecutive::asyncGetHashes(
         callback(nullptr, std::move(*totalHash));
     };
 
-    for (auto& it : m_calledExecutor)
+    for (auto& it : *(m_scheduler->m_executorManager))
     {
         it->getHash(number(),
             [status, mutex, totalHash](bcos::Error::Ptr&& error, crypto::HashType&& hash) {
@@ -292,10 +360,10 @@ void BlockExecutive::asyncGetHashes(
     }
 }
 
-void BlockExecutive::asyncBlockCommit(std::function<void(Error::UniquePtr&&)> callback)
+void BlockExecutive::batchBlockCommit(std::function<void(Error::UniquePtr&&)> callback)
 {
     auto status = std::make_shared<CommitStatus>();
-    status->total = 1 + m_calledExecutor.size();  // self + all executors
+    status->total = 1 + m_scheduler->m_executorManager->size();  // self + all executors
     status->checkAndCommit = [this, callback = std::move(callback)](const CommitStatus& status) {
         if (status.success + status.failed < status.total)
         {
@@ -332,7 +400,7 @@ void BlockExecutive::asyncBlockCommit(std::function<void(Error::UniquePtr&&)> ca
         status->checkAndCommit(*status);
     });
 
-    for (auto& it : m_calledExecutor)
+    for (auto& it : *(m_scheduler->m_executorManager))
     {
         executor::ParallelTransactionExecutorInterface::TwoPCParams executorParams;
         it->commit(executorParams, [status](bcos::Error::Ptr&& error) {
@@ -352,10 +420,10 @@ void BlockExecutive::asyncBlockCommit(std::function<void(Error::UniquePtr&&)> ca
     }
 }
 
-void BlockExecutive::asyncBlockRollback(std::function<void(Error::UniquePtr&&)> callback)
+void BlockExecutive::batchBlockRollback(std::function<void(Error::UniquePtr&&)> callback)
 {
     auto status = std::make_shared<CommitStatus>();
-    status->total = 1 + m_calledExecutor.size();  // self + all executors
+    status->total = 1 + m_scheduler->m_executorManager->size();  // self + all executors
     status->checkAndCommit = [this, callback = std::move(callback)](const CommitStatus& status) {
         if (status.success + status.failed < status.total)
         {
@@ -392,7 +460,7 @@ void BlockExecutive::asyncBlockRollback(std::function<void(Error::UniquePtr&&)> 
         status->checkAndCommit(*status);
     });
 
-    for (auto& it : m_calledExecutor)
+    for (auto& it : *(m_scheduler->m_executorManager))
     {
         executor::ParallelTransactionExecutorInterface::TwoPCParams executorParams;
         it->rollback(executorParams, [status](bcos::Error::Ptr&& error) {
@@ -443,6 +511,20 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr&&)> callback
 
             it->message->setSeq(seq);
 
+            // When to() is empty, create contract
+            if (it->message->to().empty())
+            {
+                if (it->message->createSalt())
+                {
+                    it->message->setTo(newEVMAddress(
+                        it->message->from(), it->message->data(), *(it->message->createSalt())));
+                }
+                else
+                {
+                    it->message->setTo(newEVMAddress(number(), it->contextID, it->message->seq()));
+                }
+            }
+
             break;
         }
         // Return type, pop stack
@@ -478,15 +560,7 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr&&)> callback
         // Retry type, send again
         case protocol::ExecutionMessage::WAIT_KEY:
         {
-            auto keyIt = m_keyLocks.find(
-                std::string(it->message->keyLockAcquired()));  // TODO: replace tbb with onetbb,
-                                                               // support find with string_view
-            if (keyIt != m_keyLocks.end() && keyIt->second.count > 0 &&
-                keyIt->second.contextID != it->contextID)
-            {
-                continue;  // Request key is locking
-            }
-
+            BOOST_THROW_EXCEPTION(BCOS_ERROR(SchedulerError::UnknownError, "Unsupported method"));
             break;
         }
         // Retry type, send again
@@ -500,7 +574,7 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr&&)> callback
 
         ++batchStatus->total;
         auto executor = m_scheduler->m_executorManager->dispatchExecutor(it->message->to());
-        m_calledExecutor.emplace(executor);
+
         executor->executeTransaction(
             std::move(it->message), [this, it, batchStatus](bcos::Error::UniquePtr&& error,
                                         bcos::protocol::ExecutionMessage::UniquePtr&& response) {
@@ -566,35 +640,11 @@ void BlockExecutive::checkBatch(BatchStatus& status)
     }
 }
 
-bcos::protocol::BlockHeader::Ptr BlockExecutive::generateResultBlockHeader(crypto::HashType hash)
+std::string BlockExecutive::newEVMAddress(int64_t blockNumber, int64_t contextID, int64_t seq)
 {
-    auto blockHeader =
-        m_scheduler->m_blockHeaderFactory->createBlockHeader(m_block->blockHeaderConst()->number());
-    auto currentBlockHeader = m_block->blockHeaderConst();
-
-    blockHeader->setVersion(currentBlockHeader->version());
-    blockHeader->setTxsRoot(currentBlockHeader->txsRoot());
-    blockHeader->setReceiptsRoot(currentBlockHeader->receiptsRoot());
-    blockHeader->setStateRoot(std::move(hash));  // TODO: calc the state root
-    blockHeader->setNumber(currentBlockHeader->number());
-    blockHeader->setGasUsed(m_gasUsed);
-    blockHeader->setTimestamp(currentBlockHeader->timestamp());
-    blockHeader->setSealer(currentBlockHeader->sealer());
-    blockHeader->setSealerList(currentBlockHeader->sealerList());
-    blockHeader->setSignatureList(currentBlockHeader->signatureList());
-    blockHeader->setConsensusWeights(currentBlockHeader->consensusWeights());
-    blockHeader->setParentInfo(currentBlockHeader->parentInfo());
-    blockHeader->setExtraData(currentBlockHeader->extraData().toBytes());
-
-    return blockHeader;
-}
-
-std::string BlockExecutive::newEVMAddress(
-    const std::string_view& sender, int64_t blockNumber, int64_t contextID)
-{
-    auto hash = m_scheduler->m_hashImpl->hash(std::string(sender) +
-                                              boost::lexical_cast<std::string>(blockNumber) +
-                                              boost::lexical_cast<std::string>(contextID));
+    auto hash = m_scheduler->m_hashImpl->hash(boost::lexical_cast<std::string>(blockNumber) + "_" +
+                                              boost::lexical_cast<std::string>(contextID) + "_" +
+                                              boost::lexical_cast<std::string>(seq));
 
     std::string hexAddress;
     hexAddress.reserve(40);

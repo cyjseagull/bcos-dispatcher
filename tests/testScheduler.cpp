@@ -8,6 +8,7 @@
 #include "interfaces/storage/StorageInterface.h"
 #include "mock/MockExecutor.h"
 #include "mock/MockExecutor3.h"
+#include "mock/MockExecutorForCreate.h"
 #include "mock/MockLedger.h"
 #include "mock/MockTransactionalStorage.h"
 #include <bcos-framework/libexecutor/NativeExecutionMessage.h>
@@ -18,6 +19,7 @@
 #include <bcos-tars-protocol/TransactionFactoryImpl.h>
 #include <bcos-tars-protocol/TransactionMetaDataImpl.h>
 #include <bcos-tars-protocol/TransactionReceiptFactoryImpl.h>
+#include <boost/exception/diagnostic_information.hpp>
 #include <boost/test/unit_test.hpp>
 
 namespace bcos::test
@@ -33,14 +35,17 @@ struct SchedulerFixture
         ledger = std::make_shared<MockLedger>();
         executorManager = std::make_shared<scheduler::ExecutorManager>();
         storage = std::make_shared<MockTransactionalStorage>();
+
+        auto stateStorage = std::make_shared<storage::StateStorage>(nullptr);
+        storage->m_storage = stateStorage;
+
         transactionFactory = std::make_shared<bcostars::protocol::TransactionFactoryImpl>(suite);
         transactionReceiptFactory =
             std::make_shared<bcostars::protocol::TransactionReceiptFactoryImpl>(suite);
-        blockHeaderFactory = std::make_shared<bcostars::protocol::BlockHeaderFactoryImpl>(suite);
         executionMessageFactory = std::make_shared<bcos::executor::NativeExecutionMessageFactory>();
 
         scheduler = std::make_shared<scheduler::SchedulerImpl>(executorManager, ledger, storage,
-            executionMessageFactory, transactionReceiptFactory, blockHeaderFactory, hashImpl);
+            executionMessageFactory, transactionReceiptFactory, hashImpl);
 
         blockFactory = std::make_shared<bcostars::protocol::BlockFactoryImpl>(
             suite, blockHeaderFactory, transactionFactory, transactionReceiptFactory);
@@ -48,7 +53,7 @@ struct SchedulerFixture
 
     ledger::LedgerInterface::Ptr ledger;
     scheduler::ExecutorManager::Ptr executorManager;
-    storage::TransactionalStorageInterface::Ptr storage;
+    std::shared_ptr<MockTransactionalStorage> storage;
     protocol::ExecutionMessageFactory::Ptr executionMessageFactory;
     protocol::TransactionReceiptFactory::Ptr transactionReceiptFactory;
     protocol::BlockHeaderFactory::Ptr blockHeaderFactory;
@@ -106,12 +111,22 @@ BOOST_AUTO_TEST_CASE(executeBlock)
     BOOST_CHECK(executedHeader);
     BOOST_CHECK_NE(executedHeader->stateRoot(), h256());
 
+    bool commited = false;
     scheduler->commitBlock(
         executedHeader, [&](bcos::Error::Ptr&& error, bcos::ledger::LedgerConfig::Ptr&& config) {
+            commited = true;
+
             BOOST_CHECK(!error);
-            // BOOST_CHECK(config);
-            (void)config;
+            BOOST_CHECK(config);
+            BOOST_CHECK_EQUAL(config->blockTxCountLimit(), 100);
+            BOOST_CHECK_EQUAL(config->consensusTimeout(), 200);
+            BOOST_CHECK_EQUAL(config->leaderSwitchPeriod(), 300);
+            BOOST_CHECK_EQUAL(config->consensusNodeList().size(), 1);
+            BOOST_CHECK_EQUAL(config->observerNodeList().size(), 2);
+            BOOST_CHECK_EQUAL(config->hash().hex(), h256(110).hex());
         });
+
+    BOOST_CHECK(commited);
 }
 
 BOOST_AUTO_TEST_CASE(registerExecutor)
@@ -123,6 +138,32 @@ BOOST_AUTO_TEST_CASE(registerExecutor)
         "executor1", executor, [&](Error::Ptr&& error) { BOOST_CHECK(!error); });
     scheduler->registerExecutor(
         "executor2", executor2, [&](Error::Ptr&& error) { BOOST_CHECK(!error); });
+}
+
+BOOST_AUTO_TEST_CASE(createContract)
+{
+    // Add executor
+    executorManager->addExecutor(
+        "executor1", std::make_shared<MockParallelExecutorForCreate>("executor1"));
+
+    // Generate a test block
+    auto block = blockFactory->createBlock();
+    block->blockHeader()->setNumber(100);
+
+    auto metaTx = std::make_shared<bcostars::protocol::TransactionMetaDataImpl>(h256(1), "");
+    block->appendTransactionMetaData(std::move(metaTx));
+
+    bcos::protocol::BlockHeader::Ptr executedHeader;
+    scheduler->executeBlock(
+        block, false, [&](bcos::Error::Ptr&& error, bcos::protocol::BlockHeader::Ptr&& header) {
+            BOOST_CHECK(!error);
+            BOOST_CHECK(header);
+
+            executedHeader = std::move(header);
+        });
+
+    BOOST_CHECK(executedHeader);
+    BOOST_CHECK_NE(executedHeader->stateRoot(), h256());
 }
 
 BOOST_AUTO_TEST_SUITE_END()
