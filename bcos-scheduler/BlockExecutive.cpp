@@ -10,6 +10,7 @@
 #include <boost/exception/diagnostic_information.hpp>
 #include <boost/lexical_cast.hpp>
 #include <atomic>
+#include <chrono>
 #include <iterator>
 
 using namespace bcos::scheduler;
@@ -23,6 +24,8 @@ void BlockExecutive::asyncExecute(
         return;
     }
 
+    m_currentTimePoint = std::chrono::system_clock::now();
+
     if (m_block->transactionsMetaDataSize() > 0)
     {
         m_executiveResults.resize(m_block->transactionsMetaDataSize());
@@ -31,7 +34,7 @@ void BlockExecutive::asyncExecute(
             auto metaData = m_block->transactionMetaData(i);
 
             auto message = m_scheduler->m_executionMessageFactory->createExecutionMessage();
-            message->setContextID(i);
+            message->setContextID(i + m_startContextID);
             message->setType(protocol::ExecutionMessage::TXHASH);
             message->setTransactionHash(metaData->hash());
 
@@ -60,7 +63,7 @@ void BlockExecutive::asyncExecute(
 
             auto message = m_scheduler->m_executionMessageFactory->createExecutionMessage();
             message->setType(protocol::ExecutionMessage::MESSAGE);
-            message->setContextID(i);
+            message->setContextID(i + m_startContextID);
 
             std::string sender;
             sender.reserve(tx->sender().size() * 2);
@@ -124,6 +127,12 @@ void BlockExecutive::asyncExecute(
                 }
                 else
                 {
+                    auto now = std::chrono::system_clock::now();
+                    m_self->m_executeElapsed =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::system_clock::now() - m_self->m_currentTimePoint);
+                    m_self->m_currentTimePoint = now;
+
                     if (m_self->m_staticCall)
                     {
                         // Set result to m_block
@@ -147,6 +156,10 @@ void BlockExecutive::asyncExecute(
                                     nullptr);
                                 return;
                             }
+
+                            self->m_hashElapsed =
+                                std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::system_clock::now() - self->m_currentTimePoint);
 
                             // Set result to m_block
                             for (auto& it : self->m_executiveResults)
@@ -190,6 +203,8 @@ void BlockExecutive::asyncExecute(
 void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr&&)> callback) noexcept
 {
     auto stateStorage = std::make_shared<storage::StateStorage>(m_scheduler->m_storage);
+
+    m_currentTimePoint = std::chrono::system_clock::now();
 
     m_scheduler->m_ledger->asyncPrewriteBlock(stateStorage, m_block,
         [this, stateStorage, callback = std::move(callback)](Error::Ptr&& error) mutable {
@@ -245,6 +260,13 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr&&)> callbac
                             "Commit block to storage failed!", *error));
                         return;
                     }
+
+                    m_commitElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now() - m_currentTimePoint);
+                    SCHEDULER_LOG(INFO) << "Commit block: " << number()
+                                        << " success, execute elapsed: " << m_executeElapsed.count()
+                                        << "ms hash elapsed: " << m_hashElapsed.count()
+                                        << "ms commit elapsed: " << m_commitElapsed.count() << "ms";
 
                     callback(nullptr);
                 });

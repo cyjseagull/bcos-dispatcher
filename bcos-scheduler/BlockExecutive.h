@@ -15,6 +15,7 @@
 #include <tbb/concurrent_unordered_map.h>
 #include <boost/iterator/iterator_categories.hpp>
 #include <boost/range/any_range.hpp>
+#include <chrono>
 #include <forward_list>
 #include <mutex>
 #include <stack>
@@ -108,6 +109,12 @@ private:
 
     std::set<std::string, std::less<>> m_calledContract;
     size_t m_gasUsed = 0;
+
+    std::chrono::system_clock::time_point m_currentTimePoint;
+
+    std::chrono::milliseconds m_executeElapsed;
+    std::chrono::milliseconds m_hashElapsed;
+    std::chrono::milliseconds m_commitElapsed;
 
     bcos::protocol::Block::Ptr m_block;
     bcos::protocol::BlockHeader::Ptr m_result;
