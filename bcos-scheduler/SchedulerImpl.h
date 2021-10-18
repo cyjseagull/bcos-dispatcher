@@ -11,7 +11,7 @@
 
 namespace bcos::scheduler
 {
-class SchedulerImpl : public SchedulerInterface
+class SchedulerImpl : public SchedulerInterface, public std::enable_shared_from_this<SchedulerImpl>
 {
 public:
     friend class BlockExecutive;

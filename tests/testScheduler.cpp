@@ -139,6 +139,7 @@ BOOST_AUTO_TEST_CASE(executeBlock)
 
     BOOST_CHECK(commited);
     BOOST_CHECK_EQUAL(notifyBlockNumber, 100);
+
 }
 
 BOOST_AUTO_TEST_CASE(call)

@@ -130,8 +130,7 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
         return;
     }
 
-    auto commitLockPtr = std::make_shared<decltype(commitLock)>(
-        std::move(commitLock));  // std::function need copyable
+    auto commitLockPtr = std::make_shared<decltype(commitLock)>(std::move(commitLock));  // std::function need copyable
 
     blocksLock.unlock();
     frontBlock.asyncCommit([this, callback = std::move(callback), block = frontBlock.block(),
@@ -144,6 +143,7 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
                 nullptr);
             return;
         }
+
 
         asyncGetLedgerConfig([this, callback = std::move(callback)](
                                  Error::Ptr&& error, ledger::LedgerConfig::Ptr ledgerConfig) {
@@ -161,6 +161,7 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
                                 << LOG_KV("block number", ledgerConfig->blockNumber());
 
             std::unique_lock<std::mutex> blocksLock(m_blocksMutex);
+            // this pointer is released
             m_blocks.pop_front();
 
             SCHEDULER_LOG(DEBUG) << "Remove committed block: " << ledgerConfig->blockNumber()
