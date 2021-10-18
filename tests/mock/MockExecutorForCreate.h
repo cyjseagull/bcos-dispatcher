@@ -18,8 +18,8 @@ public:
     ~MockParallelExecutorForCreate() override {}
 
     void executeTransaction(bcos::protocol::ExecutionMessage::UniquePtr input,
-        std::function<void(bcos::Error::UniquePtr&&, bcos::protocol::ExecutionMessage::UniquePtr&&)>
-            callback) noexcept override
+        std::function<void(bcos::Error::UniquePtr, bcos::protocol::ExecutionMessage::UniquePtr)>
+            callback) override
     {
         SCHEDULER_LOG(TRACE) << "Execute, type: " << input->type()
                              << " contextID: " << input->contextID() << " seq: " << input->seq();
@@ -73,8 +73,7 @@ public:
 
 
     void getHash(bcos::protocol::BlockNumber number,
-        std::function<void(bcos::Error::UniquePtr&&, crypto::HashType&&)> callback) noexcept
-        override
+        std::function<void(bcos::Error::UniquePtr, crypto::HashType)> callback) override
     {
         BOOST_CHECK_GT(number, 0);
         callback(nullptr, h256(255));

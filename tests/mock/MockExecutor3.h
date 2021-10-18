@@ -16,8 +16,8 @@ public:
     ~MockParallelExecutor3() override {}
 
     void executeTransaction(bcos::protocol::ExecutionMessage::UniquePtr input,
-        std::function<void(bcos::Error::UniquePtr&&, bcos::protocol::ExecutionMessage::UniquePtr&&)>
-            callback) noexcept override
+        std::function<void(bcos::Error::UniquePtr, bcos::protocol::ExecutionMessage::UniquePtr)>
+            callback) override
     {
         BOOST_CHECK_EQUAL(input->type(), protocol::ExecutionMessage::TXHASH);
         BOOST_CHECK_GE(input->contextID(), 0);
@@ -82,30 +82,27 @@ public:
         }
     }
 
-    void prepare(const TwoPCParams& params,
-        std::function<void(bcos::Error::Ptr&&)> callback) noexcept override
+    void prepare(const TwoPCParams& params, std::function<void(bcos::Error::Ptr)> callback) override
     {
         BOOST_CHECK_EQUAL(params.number, 100);
         callback(nullptr);
     }
 
-    void commit(const TwoPCParams& params,
-        std::function<void(bcos::Error::Ptr&&)> callback) noexcept override
+    void commit(const TwoPCParams& params, std::function<void(bcos::Error::Ptr)> callback) override
     {
         BOOST_CHECK_EQUAL(params.number, 100);
         callback(nullptr);
     }
 
-    void rollback(const TwoPCParams& params,
-        std::function<void(bcos::Error::Ptr&&)> callback) noexcept override
+    void rollback(
+        const TwoPCParams& params, std::function<void(bcos::Error::Ptr)> callback) override
     {
         BOOST_CHECK_EQUAL(params.number, 100);
         callback(nullptr);
     }
 
     void getHash(bcos::protocol::BlockNumber number,
-        std::function<void(bcos::Error::UniquePtr&&, crypto::HashType&&)> callback) noexcept
-        override
+        std::function<void(bcos::Error::UniquePtr, crypto::HashType)> callback) override
     {
         BOOST_CHECK_EQUAL(number, 100);
         callback(nullptr, h256(255));

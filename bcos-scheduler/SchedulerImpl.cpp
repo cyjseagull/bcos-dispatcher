@@ -6,6 +6,7 @@
 #include <boost/exception/diagnostic_information.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/throw_exception.hpp>
+#include <memory>
 #include <mutex>
 #include <variant>
 
@@ -67,7 +68,7 @@ void SchedulerImpl::executeBlock(bcos::protocol::Block::Ptr block, bool verify,
         }
     }
 
-    m_blocks.emplace_back(std::move(block), this);
+    m_blocks.emplace_back(std::move(block), this, 0, false);
 
     auto executeLockPtr = std::make_shared<decltype(executeLock)>(std::move(executeLock));
     m_blocks.back().asyncExecute([callback = std::move(callback), executeLock =
@@ -184,8 +185,30 @@ void SchedulerImpl::status(
 void SchedulerImpl::call(protocol::Transaction::Ptr tx,
     std::function<void(Error::Ptr&&, protocol::TransactionReceipt::Ptr&&)> callback)
 {
-    (void)tx;
-    (void)callback;
+    // Create temp block
+    auto block = m_blockFactory->createBlock();
+    block->appendTransaction(std::move(tx));
+
+    // Create temp executive
+    auto blockExecutive =
+        std::make_shared<BlockExecutive>(std::move(block), this, m_calledContextID++, true);
+
+    blockExecutive->asyncExecute([executive = blockExecutive, callback = std::move(callback)](
+                                     Error::UniquePtr&& error, protocol::BlockHeader::Ptr) {
+        if (error)
+        {
+            SCHEDULER_LOG(ERROR) << "Unknown error, " << boost::diagnostic_information(*error);
+            callback(
+                BCOS_ERROR_WITH_PREV_PTR(SchedulerError::UnknownError, "Unknown error", *error),
+                nullptr);
+            return;
+        }
+        SCHEDULER_LOG(INFO) << "Call success";
+
+        auto receipt =
+            std::const_pointer_cast<protocol::TransactionReceipt>(executive->block()->receipt(0));
+        callback(nullptr, std::move(receipt));
+    });
 }
 
 void SchedulerImpl::registerExecutor(std::string name,

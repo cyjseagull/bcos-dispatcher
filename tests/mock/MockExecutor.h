@@ -18,7 +18,7 @@ public:
     const std::string& name() const { return m_name; }
 
     void nextBlockHeader(const bcos::protocol::BlockHeader::ConstPtr& blockHeader,
-        std::function<void(bcos::Error::UniquePtr&&)> callback) noexcept override
+        std::function<void(bcos::Error::UniquePtr)> callback) override
     {
         SCHEDULER_LOG(TRACE) << "Receiving nextBlock: " << blockHeader->number();
         m_blockNumber = blockHeader->number();
@@ -26,8 +26,8 @@ public:
     }
 
     void executeTransaction(bcos::protocol::ExecutionMessage::UniquePtr input,
-        std::function<void(bcos::Error::UniquePtr&&, bcos::protocol::ExecutionMessage::UniquePtr&&)>
-            callback) noexcept override
+        std::function<void(bcos::Error::UniquePtr, bcos::protocol::ExecutionMessage::UniquePtr)>
+            callback) override
     {
         // Always success
         BOOST_CHECK(input);
@@ -41,42 +41,38 @@ public:
         callback(nullptr, std::move(input));
     }
 
-    void dagExecuteTransactions(
-        const gsl::span<bcos::protocol::ExecutionMessage::UniquePtr>& inputs,
+    void dagExecuteTransactions(gsl::span<bcos::protocol::ExecutionMessage::UniquePtr> inputs,
         std::function<void(
-            bcos::Error::UniquePtr&&, std::vector<bcos::protocol::ExecutionMessage::UniquePtr>&&)>
+            bcos::Error::UniquePtr, std::vector<bcos::protocol::ExecutionMessage::UniquePtr>)>
             callback) noexcept override
     {}
 
     void call(bcos::protocol::ExecutionMessage::UniquePtr input,
-        std::function<void(bcos::Error::UniquePtr&&, bcos::protocol::ExecutionMessage::UniquePtr&&)>
-            callback) noexcept override
+        std::function<void(bcos::Error::UniquePtr, bcos::protocol::ExecutionMessage::UniquePtr)>
+            callback) override
     {}
 
     void getHash(bcos::protocol::BlockNumber number,
-        std::function<void(bcos::Error::UniquePtr&&, crypto::HashType&&)> callback) noexcept
-        override
+        std::function<void(bcos::Error::UniquePtr, crypto::HashType)> callback) override
     {}
 
-    void prepare(const TwoPCParams& params,
-        std::function<void(bcos::Error::Ptr&&)> callback) noexcept override
+    void prepare(const TwoPCParams& params, std::function<void(bcos::Error::Ptr)> callback) override
     {
         callback(nullptr);
     }
 
-    void commit(const TwoPCParams& params,
-        std::function<void(bcos::Error::Ptr&&)> callback) noexcept override
+    void commit(const TwoPCParams& params, std::function<void(bcos::Error::Ptr)> callback) override
     {
         callback(nullptr);
     }
 
-    void rollback(const TwoPCParams& params,
-        std::function<void(bcos::Error::Ptr&&)> callback) noexcept override
+    void rollback(
+        const TwoPCParams& params, std::function<void(bcos::Error::Ptr)> callback) override
     {
         callback(nullptr);
     }
 
-    void reset(std::function<void(bcos::Error::Ptr&&)> callback) noexcept override {}
+    void reset(std::function<void(bcos::Error::Ptr)> callback) override {}
 
     std::string m_name;
     bcos::protocol::BlockNumber m_blockNumber = 0;

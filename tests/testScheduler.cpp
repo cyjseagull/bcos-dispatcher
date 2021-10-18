@@ -1,14 +1,17 @@
 #include "bcos-scheduler/ExecutorManager.h"
 #include "bcos-scheduler/SchedulerImpl.h"
 #include "interfaces/crypto/CryptoSuite.h"
+#include "interfaces/crypto/KeyPairInterface.h"
 #include "interfaces/executor/ExecutionMessage.h"
 #include "interfaces/ledger/LedgerInterface.h"
 #include "interfaces/protocol/BlockHeaderFactory.h"
 #include "interfaces/protocol/ProtocolTypeDef.h"
+#include "interfaces/protocol/TransactionReceipt.h"
 #include "interfaces/protocol/TransactionReceiptFactory.h"
 #include "interfaces/storage/StorageInterface.h"
 #include "mock/MockExecutor.h"
 #include "mock/MockExecutor3.h"
+#include "mock/MockExecutorForCall.h"
 #include "mock/MockExecutorForCreate.h"
 #include "mock/MockLedger.h"
 #include "mock/MockTransactionalStorage.h"
@@ -45,11 +48,13 @@ struct SchedulerFixture
             std::make_shared<bcostars::protocol::TransactionReceiptFactoryImpl>(suite);
         executionMessageFactory = std::make_shared<bcos::executor::NativeExecutionMessageFactory>();
 
-        scheduler = std::make_shared<scheduler::SchedulerImpl>(executorManager, ledger, storage,
-            executionMessageFactory, transactionReceiptFactory, hashImpl);
-
         blockFactory = std::make_shared<bcostars::protocol::BlockFactoryImpl>(
             suite, blockHeaderFactory, transactionFactory, transactionReceiptFactory);
+
+        scheduler = std::make_shared<scheduler::SchedulerImpl>(
+            executorManager, ledger, storage, executionMessageFactory, blockFactory, hashImpl);
+
+        keyPair = suite->signatureImpl()->generateKeyPair();
     }
 
     ledger::LedgerInterface::Ptr ledger;
@@ -60,6 +65,7 @@ struct SchedulerFixture
     protocol::BlockHeaderFactory::Ptr blockHeaderFactory;
     bcos::crypto::Hash::Ptr hashImpl;
     scheduler::SchedulerImpl::Ptr scheduler;
+    bcos::crypto::KeyPairInterface::Ptr keyPair;
 
     bcostars::protocol::TransactionFactoryImpl::Ptr transactionFactory;
     bcos::crypto::SignatureCrypto::Ptr signature;
@@ -133,6 +139,35 @@ BOOST_AUTO_TEST_CASE(executeBlock)
 
     BOOST_CHECK(commited);
     BOOST_CHECK_EQUAL(notifyBlockNumber, 100);
+}
+
+BOOST_AUTO_TEST_CASE(call)
+{
+    // Add executor
+    executorManager->addExecutor(
+        "executor1", std::make_shared<MockParallelExecutorForCall>("executor1"));
+
+    std::string inputStr = "Hello world! request";
+    auto tx = blockFactory->transactionFactory()->createTransaction(0, "address_to",
+        bytes(inputStr.begin(), inputStr.end()), 200, 300, "chain", "group", 500, keyPair);
+
+    bcos::protocol::TransactionReceipt::Ptr receipt;
+
+    scheduler->call(
+        tx, [&](bcos::Error::Ptr error, bcos::protocol::TransactionReceipt::Ptr receiptResponse) {
+            BOOST_CHECK(!error);
+            BOOST_CHECK(receiptResponse);
+
+            receipt = std::move(receiptResponse);
+        });
+
+    BOOST_CHECK_EQUAL(receipt->blockNumber(), 0);
+    BOOST_CHECK_EQUAL(receipt->status(), 0);
+    BOOST_CHECK_GT(receipt->gasUsed(), 0);
+    auto output = receipt->output();
+
+    std::string outputStr((char*)output.data(), output.size());
+    BOOST_CHECK_EQUAL(outputStr, "Hello world! response");
 }
 
 BOOST_AUTO_TEST_CASE(registerExecutor)

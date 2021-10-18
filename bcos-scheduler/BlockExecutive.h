@@ -29,8 +29,12 @@ class BlockExecutive
 public:
     using UniquePtr = std::unique_ptr<BlockExecutive>;
 
-    BlockExecutive(bcos::protocol::Block::Ptr block, SchedulerImpl* scheduler)
-      : m_block(std::move(block)), m_scheduler(scheduler)
+    BlockExecutive(bcos::protocol::Block::Ptr block, SchedulerImpl* scheduler,
+        size_t startContextID, bool call)
+      : m_block(std::move(block)),
+        m_scheduler(scheduler),
+        m_startContextID(startContextID),
+        m_staticCall(call)
     {}
 
     BlockExecutive(const BlockExecutive&) = delete;
@@ -47,6 +51,8 @@ public:
 
     bcos::protocol::Block::Ptr block() { return m_block; }
     bcos::protocol::BlockHeader::Ptr result() { return m_result; }
+
+    bool isCall() { return m_staticCall; }
 
 private:
     struct CommitStatus
@@ -77,6 +83,8 @@ private:
     std::string newEVMAddress(
         const std::string_view& _sender, bytesConstRef _init, u256 const& _salt);
 
+    std::string preprocessAddress(const std::string_view& address);
+
     struct ExecutiveState  // Executive state per tx
     {
         ExecutiveState(int64_t _contextID, bcos::protocol::ExecutionMessage::UniquePtr _message)
@@ -99,11 +107,12 @@ private:
     std::vector<ExecutiveResult> m_executiveResults;
 
     std::set<std::string, std::less<>> m_calledContract;
-
     size_t m_gasUsed = 0;
 
     bcos::protocol::Block::Ptr m_block;
     bcos::protocol::BlockHeader::Ptr m_result;
     SchedulerImpl* m_scheduler;
+    size_t m_startContextID;
+    bool m_staticCall = false;
 };
 }  // namespace bcos::scheduler
