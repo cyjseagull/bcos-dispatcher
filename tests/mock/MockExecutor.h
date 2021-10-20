@@ -13,7 +13,7 @@ class MockParallelExecutor : public bcos::executor::ParallelTransactionExecutorI
 public:
     MockParallelExecutor(const std::string& name) : m_name(name) {}
 
-    virtual ~MockParallelExecutor() {}
+    ~MockParallelExecutor() override {}
 
     const std::string& name() const { return m_name; }
 

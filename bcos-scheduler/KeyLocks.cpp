@@ -1,47 +1,61 @@
 #include "KeyLocks.h"
+#include "Common.h"
 #include <assert.h>
+#include <bcos-framework/libutilities/Error.h>
+#include <boost/throw_exception.hpp>
 
-using namespace bcos::executor;
+using namespace bcos::scheduler;
 
 bool KeyLocks::acquireKeyLock(
-    const std::string_view& table, const std::string_view& key, int contextID)
+    const std::string_view& contract, const std::string_view& key, int64_t contextID, int64_t seq)
 {
-    assert(contextID >= 0);
-
-    auto it = m_key2ContextID.find(std::tuple{table, key});
-    if (it != m_key2ContextID.end())
+    auto it = m_keyLocks.get<1>().find(std::tuple{contract, key});
+    if (it != m_keyLocks.get<1>().end())
     {
-        if (it->second == contextID || it->second < 0)
+        if (it->contextID != contextID)
         {
-            return true;
-        }
-        else
-        {
+            // Another context is owing the key
             return false;
         }
     }
 
-    auto contextIt = m_contextID2Key.find(contextID);
-    if (contextIt != m_contextID2Key.end())
+    // Current context owing the key, accquire it
+    auto [insertedIt, inserted] = m_keyLocks.get<1>().emplace(
+        KeyLockItem{std::string(contract), std::string(key), contextID, seq});
+
+    if (!inserted)
     {
-        auto inserted =
-            contextIt->second.emplace_front(std::tuple{std::string(table), std::string(key)});
-        m_key2ContextID.emplace(
-            std::tuple{std::get<0>(inserted), std::get<1>(inserted)}, contextID);
+        BOOST_THROW_EXCEPTION(BCOS_ERROR(scheduler::SchedulerError::UnexpectedKeyLockError,
+            "Unexpected insert key lock failed!"));
     }
+
     return true;
 }
 
-void KeyLocks::releaseKeyLocks(int contextID)
+std::vector<std::string> KeyLocks::getKeyLocksByContract(
+    const std::string_view& contract, int64_t excludeContextID) const
 {
-    assert(contextID > 0);
+    std::vector<std::string> results;
+    auto count = m_keyLocks.get<2>().count(contract);
 
-    auto it = m_contextID2Key.find(contextID);
-    if (it != m_contextID2Key.end())
+    if (count > 0)
     {
-        for (auto& key : it->second)
+        auto range = m_keyLocks.get<2>().equal_range(contract);
+
+        for (auto it = range.first; it != range.second; ++it)
         {
-            m_key2ContextID[key] = -1;
+            if (it->contextID != excludeContextID)
+            {
+                results.emplace_back(it->key);
+            }
         }
     }
+
+    return results;
+}
+
+void KeyLocks::releaseKeyLocks(int64_t contextID, int64_t seq)
+{
+    auto range = m_keyLocks.get<3>().equal_range(std::tuple{contextID, seq});
+    m_keyLocks.get<3>().erase(range.first, range.second);
 }

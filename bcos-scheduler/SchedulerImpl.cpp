@@ -130,7 +130,8 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
         return;
     }
 
-    auto commitLockPtr = std::make_shared<decltype(commitLock)>(std::move(commitLock));  // std::function need copyable
+    auto commitLockPtr = std::make_shared<decltype(commitLock)>(
+        std::move(commitLock));  // std::function need copyable
 
     blocksLock.unlock();
     frontBlock.asyncCommit([this, callback = std::move(callback), block = frontBlock.block(),
@@ -262,86 +263,86 @@ overloaded(Ts...) -> overloaded<Ts...>;
 void SchedulerImpl::asyncGetLedgerConfig(
     std::function<void(Error::Ptr&&, ledger::LedgerConfig::Ptr ledgerConfig)> callback)
 {
-    auto collecter =
-        [summary = std::make_shared<std::tuple<size_t, std::atomic_size_t, std::atomic_size_t>>(
-             7, 0, 0),
-            ledgerConfig = std::make_shared<ledger::LedgerConfig>(),
-            callback = std::make_shared<decltype(callback)>(std::move(callback))](Error::Ptr error,
-            std::variant<std::tuple<bool, consensus::ConsensusNodeListPtr>,
-                std::tuple<int, std::string>, bcos::protocol::BlockNumber, bcos::crypto::HashType>&&
-                result) mutable {
-            auto& [total, success, failed] = *summary;
+    auto ledgerConfig = std::make_shared<ledger::LedgerConfig>();
+    auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));
+    auto summary =
+        std::make_shared<std::tuple<size_t, std::atomic_size_t, std::atomic_size_t>>(7, 0, 0);
 
-            if (error)
+    auto collecter = [summary = std::move(summary), ledgerConfig = std::move(ledgerConfig),
+                         callback = std::move(callbackPtr)](Error::Ptr error,
+                         std::variant<std::tuple<bool, consensus::ConsensusNodeListPtr>,
+                             std::tuple<int, std::string>, bcos::protocol::BlockNumber,
+                             bcos::crypto::HashType>&& result) mutable {
+        auto& [total, success, failed] = *summary;
+
+        if (error)
+        {
+            SCHEDULER_LOG(ERROR) << "Get ledger config with errors: "
+                                 << boost::diagnostic_information(*error);
+            ++failed;
+        }
+        else
+        {
+            std::visit(
+                overloaded{
+                    [&ledgerConfig](std::tuple<bool, consensus::ConsensusNodeListPtr>& nodeList) {
+                        auto& [isSealer, list] = nodeList;
+
+                        if (isSealer)
+                        {
+                            ledgerConfig->setConsensusNodeList(*list);
+                        }
+                        else
+                        {
+                            ledgerConfig->setObserverNodeList(*list);
+                        }
+                    },
+                    [&ledgerConfig](std::tuple<int, std::string> config) {
+                        auto& [type, value] = config;
+                        switch (type)
+                        {
+                        case 0:
+                            ledgerConfig->setBlockTxCountLimit(
+                                boost::lexical_cast<uint64_t>(value));
+                            break;
+                        case 1:
+                            ledgerConfig->setConsensusTimeout(boost::lexical_cast<uint64_t>(value));
+                            break;
+                        case 2:
+                            ledgerConfig->setLeaderSwitchPeriod(
+                                boost::lexical_cast<uint64_t>(value));
+                            break;
+                        default:
+                            BOOST_THROW_EXCEPTION(BCOS_ERROR(SchedulerError::UnknownError,
+                                "Unknown type: " + boost::lexical_cast<std::string>(type)));
+                            break;
+                        }
+                    },
+                    [&ledgerConfig](bcos::protocol::BlockNumber number) {
+                        ledgerConfig->setBlockNumber(number);
+                    },
+                    [&ledgerConfig](bcos::crypto::HashType hash) { ledgerConfig->setHash(hash); }},
+                result);
+
+            ++success;
+        }
+
+        // Collect done
+        if (success + failed == total)
+        {
+            if (failed > 0)
             {
-                SCHEDULER_LOG(ERROR)
-                    << "Get ledger config with errors: " << boost::diagnostic_information(*error);
-                ++failed;
-            }
-            else
-            {
-                std::visit(
-                    overloaded{[&ledgerConfig](
-                                   std::tuple<bool, consensus::ConsensusNodeListPtr>& nodeList) {
-                                   auto& [isSealer, list] = nodeList;
+                SCHEDULER_LOG(ERROR) << "Get ledger config with error: " << failed;
+                (*callback)(
+                    BCOS_ERROR_PTR(SchedulerError::UnknownError, "Get ledger config with error"),
+                    nullptr);
 
-                                   if (isSealer)
-                                   {
-                                       ledgerConfig->setConsensusNodeList(*list);
-                                   }
-                                   else
-                                   {
-                                       ledgerConfig->setObserverNodeList(*list);
-                                   }
-                               },
-                        [&ledgerConfig](std::tuple<int, std::string> config) {
-                            auto& [type, value] = config;
-                            switch (type)
-                            {
-                            case 0:
-                                ledgerConfig->setBlockTxCountLimit(
-                                    boost::lexical_cast<uint64_t>(value));
-                                break;
-                            case 1:
-                                ledgerConfig->setConsensusTimeout(
-                                    boost::lexical_cast<uint64_t>(value));
-                                break;
-                            case 2:
-                                ledgerConfig->setLeaderSwitchPeriod(
-                                    boost::lexical_cast<uint64_t>(value));
-                                break;
-                            default:
-                                BOOST_THROW_EXCEPTION(BCOS_ERROR(SchedulerError::UnknownError,
-                                    "Unknown type: " + boost::lexical_cast<std::string>(type)));
-                                break;
-                            }
-                        },
-                        [&ledgerConfig](bcos::protocol::BlockNumber number) {
-                            ledgerConfig->setBlockNumber(number);
-                        },
-                        [&ledgerConfig](
-                            bcos::crypto::HashType hash) { ledgerConfig->setHash(hash); }},
-                    result);
-
-                ++success;
+                return;
             }
 
-            // Collect done
-            if (success + failed == total)
-            {
-                if (failed > 0)
-                {
-                    SCHEDULER_LOG(ERROR) << "Get ledger config with error: " << failed;
-                    (*callback)(BCOS_ERROR_PTR(
-                                    SchedulerError::UnknownError, "Get ledger config with error"),
-                        nullptr);
-
-                    return;
-                }
-
-                (*callback)(nullptr, std::move(ledgerConfig));
-            }
-        };
+            (*callback)(nullptr, std::move(ledgerConfig));
+        }
+    };
 
     m_ledger->asyncGetNodeListByType(ledger::CONSENSUS_SEALER,
         [collecter](Error::Ptr error, consensus::ConsensusNodeListPtr list) mutable {

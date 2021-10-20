@@ -33,7 +33,7 @@ public:
         BOOST_CHECK(input);
         BOOST_CHECK(!input->to().empty());
         BOOST_CHECK_EQUAL(input->depth(), 0);
-        BOOST_CHECK_EQUAL(input->gasAvailable(), 3000000);
+        BOOST_CHECK_EQUAL(input->gasAvailable(), scheduler::TRANSACTION_GAS);
 
         input->setType(bcos::protocol::ExecutionMessage::FINISHED);
         input->setStatus(0);
