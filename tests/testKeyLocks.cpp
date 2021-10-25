@@ -32,9 +32,6 @@ BOOST_AUTO_TEST_CASE(acquireKeyLock)
     // Test another contextID
     BOOST_CHECK(!keyLocks.acquireKeyLock(to, key, 1001, 0));
 
-    // Test same seq
-    BOOST_CHECK_THROW(keyLocks.acquireKeyLock(to, key, contextID, 5), bcos::Error);
-
     // Release 5 times
     for (int64_t seq = 0; seq < 5; ++seq)
     {

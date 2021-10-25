@@ -1,6 +1,6 @@
 hunter_config(bcos-framework VERSION 3.0.0-local
-    URL https://${URL_BASE}/FISCO-BCOS/bcos-framework/archive/bc671969c254092f0abf95e6f1b04247e0b7671d.tar.gz
-    SHA1 05f88db84a9a01fc27a8416be037194624f35e0a
+    URL https://${URL_BASE}/FISCO-BCOS/bcos-framework/archive/0a747e0c7d7ddf7b7b68b09a1877ecc06a5ce5df.tar.gz
+    SHA1 caa9c617a415a4c437b546f44a6544a4d32f4357
     CMAKE_ARGS HUNTER_PACKAGE_LOG_BUILD=ON HUNTER_PACKAGE_LOG_INSTALL=ON #DEBUG=ON
 )
 
@@ -9,12 +9,6 @@ hunter_config(bcos-tars-protocol
     URL https://${URL_BASE}/FISCO-BCOS/bcos-tars-protocol/archive/d6ef97d286ec88de3f9ac874730f9b98916bc2fc.tar.gz
     SHA1 29b4c5fdca7fd3d0b3ec95a1015f12b099eb2af2
     CMAKE_ARGS URL_BASE=${URL_BASE}
-)
-
-hunter_config(bcos-storage VERSION 3.0.0-local-02e5f015
-    URL "https://${URL_BASE}/FISCO-BCOS/bcos-storage/archive/02e5f015e1ffe4dfcc8bc4545804d96abe0cca5f.tar.gz"
-    SHA1 ce73a61e3cf2f31792717762304090a3f74f65cc
-    CMAKE_ARGS URL_BASE=${URL_BASE} USE_TiKV=ON HUNTER_KEEP_PACKAGE_SOURCES=ON
 )
 
 hunter_config(ZLIB VERSION ${HUNTER_ZLIB_VERSION} CMAKE_ARGS CMAKE_POSITION_INDEPENDENT_CODE=TRUE)

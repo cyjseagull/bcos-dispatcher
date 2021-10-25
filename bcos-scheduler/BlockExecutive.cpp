@@ -13,12 +13,13 @@
 #include <atomic>
 #include <chrono>
 #include <iterator>
+#include <thread>
 
 using namespace bcos::scheduler;
 using namespace bcos::ledger;
 
 void BlockExecutive::asyncExecute(
-    std::function<void(Error::UniquePtr&&, protocol::BlockHeader::Ptr)> callback) noexcept
+    std::function<void(Error::UniquePtr, protocol::BlockHeader::Ptr)> callback) noexcept
 {
     if (m_result)
     {
@@ -122,6 +123,7 @@ void BlockExecutive::asyncExecute(
 
                 if (!m_self->m_executiveStates.empty())
                 {
+                    SCHEDULER_LOG(TRACE) << "Non empty states, continue startBatch";
                     m_self->m_calledContract.clear();
 
                     m_self->startBatch(std::bind(
@@ -129,6 +131,7 @@ void BlockExecutive::asyncExecute(
                 }
                 else
                 {
+                    SCHEDULER_LOG(TRACE) << "Empty states, end";
                     auto now = std::chrono::system_clock::now();
                     m_self->m_executeElapsed =
                         std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -202,7 +205,7 @@ void BlockExecutive::asyncExecute(
     }
 }
 
-void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr&&)> callback) noexcept
+void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr)> callback) noexcept
 {
     auto stateStorage = std::make_shared<storage::StateStorage>(m_scheduler->m_storage);
 
@@ -264,7 +267,7 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr&&)> callbac
 
                     m_commitElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now() - m_currentTimePoint);
-                    SCHEDULER_LOG(INFO) << "Commit block: " << number()
+                    SCHEDULER_LOG(INFO) << "CommitBlock: " << number()
                                         << " success, execute elapsed: " << m_executeElapsed.count()
                                         << "ms hash elapsed: " << m_hashElapsed.count()
                                         << "ms commit elapsed: " << m_commitElapsed.count() << "ms";
@@ -287,6 +290,7 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr&&)> callbac
                     {
                         ++status->success;
                     }
+
                     executor::ParallelTransactionExecutorInterface::TwoPCParams executorParams;
                     executorParams.number = number();
                     executorParams.primaryTableName = SYS_CURRENT_STATE;
@@ -302,15 +306,17 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr&&)> callbac
                                 else
                                 {
                                     ++status->success;
+                                    SCHEDULER_LOG(DEBUG)
+                                        << "Prepare executor success, success: " << status->success;
                                 }
+                                status->checkAndCommit(*status);
                             });
-                            status->checkAndCommit(*status);
                         });
                 });
         });
 }
 
-void BlockExecutive::batchNextBlock(std::function<void(Error::UniquePtr&&)> callback)
+void BlockExecutive::batchNextBlock(std::function<void(Error::UniquePtr)> callback)
 {
     auto status = std::make_shared<CommitStatus>();
     status->total = m_scheduler->m_executorManager->size();
@@ -354,7 +360,7 @@ void BlockExecutive::batchNextBlock(std::function<void(Error::UniquePtr&&)> call
 }
 
 void BlockExecutive::batchGetHashes(
-    std::function<void(bcos::Error::UniquePtr&&, bcos::crypto::HashType)> callback)
+    std::function<void(bcos::Error::UniquePtr, bcos::crypto::HashType)> callback)
 {
     auto mutex = std::make_shared<std::mutex>();
     auto totalHash = std::make_shared<h256>();
@@ -384,28 +390,29 @@ void BlockExecutive::batchGetHashes(
 
     for (auto& it : *(m_scheduler->m_executorManager))
     {
-        it->getHash(number(),
-            [status, mutex, totalHash](bcos::Error::Ptr&& error, crypto::HashType&& hash) {
-                if (error)
-                {
-                    SCHEDULER_LOG(ERROR)
-                        << "Commit executor error!" << boost::diagnostic_information(*error);
-                    ++status->failed;
-                }
-                else
-                {
-                    ++status->success;
+        it->getHash(number(), [status, mutex, totalHash](
+                                  bcos::Error::Ptr&& error, crypto::HashType&& hash) {
+            if (error)
+            {
+                SCHEDULER_LOG(ERROR)
+                    << "Commit executor error!" << boost::diagnostic_information(*error);
+                ++status->failed;
+            }
+            else
+            {
+                ++status->success;
+                SCHEDULER_LOG(DEBUG) << "GetHash executor success, success: " << status->success;
 
-                    std::unique_lock<std::mutex> lock(*mutex);
-                    *totalHash ^= hash;
-                }
+                std::unique_lock<std::mutex> lock(*mutex);
+                *totalHash ^= hash;
+            }
 
-                status->checkAndCommit(*status);
-            });
+            status->checkAndCommit(*status);
+        });
     }
 }
 
-void BlockExecutive::batchBlockCommit(std::function<void(Error::UniquePtr&&)> callback)
+void BlockExecutive::batchBlockCommit(std::function<void(Error::UniquePtr)> callback)
 {
     auto status = std::make_shared<CommitStatus>();
     status->total = 1 + m_scheduler->m_executorManager->size();  // self + all executors
@@ -457,14 +464,16 @@ void BlockExecutive::batchBlockCommit(std::function<void(Error::UniquePtr&&)> ca
                     else
                     {
                         ++status->success;
+                        SCHEDULER_LOG(DEBUG)
+                            << "Commit executor success, success: " << status->success;
                     }
+                    status->checkAndCommit(*status);
                 });
-                status->checkAndCommit(*status);
             });
     });
 }
 
-void BlockExecutive::batchBlockRollback(std::function<void(Error::UniquePtr&&)> callback)
+void BlockExecutive::batchBlockRollback(std::function<void(Error::UniquePtr)> callback)
 {
     auto status = std::make_shared<CommitStatus>();
     status->total = 1 + m_scheduler->m_executorManager->size();  // self + all executors
@@ -524,13 +533,20 @@ void BlockExecutive::batchBlockRollback(std::function<void(Error::UniquePtr&&)> 
     }
 }
 
-void BlockExecutive::startBatch(std::function<void(Error::UniquePtr&&)> callback)
+void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
 {
     auto batchStatus = std::make_shared<BatchStatus>();
     batchStatus->callback = std::move(callback);
 
-    for (auto it = m_executiveStates.begin();; ++it)
+    bool deleted = true;
+    for (auto it = m_executiveStates.begin();;)
     {
+        if (!deleted)
+        {
+            ++it;
+        }
+        deleted = false;
+
         if (it == m_executiveStates.end())
         {
             batchStatus->allSended = true;
@@ -551,18 +567,9 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr&&)> callback
             }
         }
 
-        // Check if another context processing same contract
-        if (m_calledContract.find(it->message->to()) != m_calledContract.end())
+        // If call with key locks, acquire it
+        if (!it->message->keyLocks().empty())
         {
-            continue;
-        }
-
-        m_calledContract.emplace(it->message->to());
-        switch (it->message->type())
-        {
-        // Request type, push stack
-        case protocol::ExecutionMessage::MESSAGE:
-            // If call with key locks, accquire it
             for (auto& keyLockIt : it->message->keyLocks())
             {
                 if (!m_keyLocks.acquireKeyLock(
@@ -573,18 +580,31 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr&&)> callback
                     return;
                 }
             }
-            [[fallthrough]];
+
+            it->message->setKeyLocks({});
+        }
+
+        switch (it->message->type())
+        {
+        // Request type, push stack
+        case protocol::ExecutionMessage::MESSAGE:
         case protocol::ExecutionMessage::TXHASH:
         {
+            // Check if another context processing same contract
+            auto contractIt = m_calledContract.lower_bound(it->message->to());
+            if (contractIt != m_calledContract.end() && *contractIt == it->message->to())
+            {
+                continue;
+            }
+            m_calledContract.emplace_hint(contractIt, it->message->to());
+            SCHEDULER_LOG(TRACE) << "Executing: " << it->message->transactionHash().hex() << " "
+                                 << it->message->to();
+
             auto seq = it->currentSeq++;
 
             it->callStack.push(seq);
 
             it->message->setSeq(seq);
-
-            // Set current key lock into message
-            auto keyLocks = m_keyLocks.getKeyLocksByContract(it->message->to(), it->contextID);
-            it->message->setKeyLocks(std::move(keyLocks));
 
             break;
         }
@@ -613,7 +633,11 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr&&)> callback
                 m_gasUsed += (TRANSACTION_GAS - it->message->gasAvailable());
 
                 // Remove executive state and continue
-                it = m_executiveStates.erase(it);
+                SCHEDULER_LOG(TRACE) << "Eraseing: " << it->message->transactionHash().hex() << " "
+                                     << it->message->to();
+
+                it = m_executiveStates.erase(it);  // FIXME: bug jump to next it
+                deleted = true;
                 continue;
             }
 
@@ -625,33 +649,12 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr&&)> callback
         // Retry type, send again
         case protocol::ExecutionMessage::WAIT_KEY:
         {
-            if (!it->message->keyLocks().empty())
-            {
-                // If call with key locks, accquire it
-                for (auto& keyLockIt : it->message->keyLocks())
-                {
-                    if (!m_keyLocks.acquireKeyLock(
-                            it->message->from(), keyLockIt, it->contextID, it->message->seq()))
-                    {
-                        batchStatus->callback(BCOS_ERROR_UNIQUE_PTR(
-                            UnexpectedKeyLockError, "Unexpected key lock error!"));
-                        return;
-                    }
-                }
-
-                it->message->setKeyLocks({});
-            }
-
             // Try acquire key lock
             if (!m_keyLocks.acquireKeyLock(it->message->to(), it->message->keyLockAcquired(),
                     it->message->contextID(), it->message->seq()))
             {
                 continue;
             }
-
-            // Set current key lock into message
-            auto keyLocks = m_keyLocks.getKeyLocksByContract(it->message->to(), it->contextID);
-            it->message->setKeyLocks(std::move(keyLocks));
 
             break;
         }
@@ -664,13 +667,15 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr&&)> callback
         }
         }
 
+        // Set current key lock into message
+        auto keyLocks = m_keyLocks.getKeyLocksByContract(it->message->to(), it->contextID);
+        it->message->setKeyLocks(std::move(keyLocks));
+
         ++batchStatus->total;
         auto executor = m_scheduler->m_executorManager->dispatchExecutor(it->message->to());
 
         auto executeCallback = [this, it, batchStatus](bcos::Error::UniquePtr&& error,
                                    bcos::protocol::ExecutionMessage::UniquePtr&& response) {
-            ++batchStatus->received;
-
             if (error)
             {
                 SCHEDULER_LOG(ERROR)
@@ -684,6 +689,9 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr&&)> callback
                 it->message = std::move(response);
             }
 
+            SCHEDULER_LOG(TRACE) << "Execute is finished!";
+
+            ++batchStatus->received;
             checkBatch(*batchStatus);
         };
 
@@ -707,6 +715,10 @@ void BlockExecutive::checkBatch(BatchStatus& status)
         bool expect = false;
         if (status.callbackExecuted.compare_exchange_strong(expect, true))  // Run callback once
         {
+            SCHEDULER_LOG(TRACE) << "Enter checkBatch callback: " << status.total << " "
+                                 << status.received << " " << std::this_thread::get_id() << " "
+                                 << status.callbackExecuted;
+
             size_t errorCount = 0;
             size_t successCount = 0;
 
@@ -725,7 +737,7 @@ void BlockExecutive::checkBatch(BatchStatus& status)
                 }
             }
 
-            SCHEDULER_LOG(INFO) << "Batch run success"
+            SCHEDULER_LOG(TRACE) << "Batch run success"
                                 << " total: " << errorCount + successCount
                                 << " success: " << successCount << " error: " << errorCount;
 

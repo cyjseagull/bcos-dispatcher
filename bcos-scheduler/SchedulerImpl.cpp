@@ -84,6 +84,8 @@ void SchedulerImpl::executeBlock(bcos::protocol::Block::Ptr block, bool verify,
         }
         SCHEDULER_LOG(INFO) << "ExecuteBlock success" << LOG_KV("block number", header->number())
                             << LOG_KV("state root", header->stateRoot().hex());
+
+        executeLock->unlock();
         callback(std::move(error), std::move(header));
     });
 }
@@ -144,7 +146,6 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
                 nullptr);
             return;
         }
-
 
         asyncGetLedgerConfig([this, callback = std::move(callback)](
                                  Error::Ptr&& error, ledger::LedgerConfig::Ptr ledgerConfig) {

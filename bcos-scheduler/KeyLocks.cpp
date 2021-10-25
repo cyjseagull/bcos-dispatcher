@@ -20,14 +20,8 @@ bool KeyLocks::acquireKeyLock(
     }
 
     // Current context owing the key, accquire it
-    auto [insertedIt, inserted] = m_keyLocks.get<1>().emplace(
+    m_keyLocks.get<1>().emplace(
         KeyLockItem{std::string(contract), std::string(key), contextID, seq});
-
-    if (!inserted)
-    {
-        BOOST_THROW_EXCEPTION(BCOS_ERROR(scheduler::SchedulerError::UnexpectedKeyLockError,
-            "Unexpected insert key lock failed!"));
-    }
 
     return true;
 }

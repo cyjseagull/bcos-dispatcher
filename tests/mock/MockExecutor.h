@@ -44,7 +44,7 @@ public:
     void dagExecuteTransactions(gsl::span<bcos::protocol::ExecutionMessage::UniquePtr> inputs,
         std::function<void(
             bcos::Error::UniquePtr, std::vector<bcos::protocol::ExecutionMessage::UniquePtr>)>
-            callback) noexcept override
+            callback) override
     {}
 
     void call(bcos::protocol::ExecutionMessage::UniquePtr input,
@@ -54,7 +54,9 @@ public:
 
     void getHash(bcos::protocol::BlockNumber number,
         std::function<void(bcos::Error::UniquePtr, crypto::HashType)> callback) override
-    {}
+    {
+        callback(nullptr, h256(12345));
+    }
 
     void prepare(const TwoPCParams& params, std::function<void(bcos::Error::Ptr)> callback) override
     {

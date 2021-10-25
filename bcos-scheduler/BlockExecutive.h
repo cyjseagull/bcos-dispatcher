@@ -46,9 +46,9 @@ public:
     BlockExecutive& operator=(BlockExecutive&&) = delete;
 
     void asyncExecute(
-        std::function<void(Error::UniquePtr&&, protocol::BlockHeader::Ptr)> callback) noexcept;
+        std::function<void(Error::UniquePtr, protocol::BlockHeader::Ptr)> callback) noexcept;
 
-    void asyncCommit(std::function<void(Error::UniquePtr&&)> callback) noexcept;
+    void asyncCommit(std::function<void(Error::UniquePtr)> callback) noexcept;
 
     bcos::protocol::BlockNumber number() { return m_block->blockHeaderConst()->number(); }
 
@@ -65,21 +65,21 @@ private:
         std::atomic_size_t failed = 0;
         std::function<void(const CommitStatus&)> checkAndCommit;
     };
-    void batchNextBlock(std::function<void(Error::UniquePtr&&)> callback);
-    void batchGetHashes(std::function<void(Error::UniquePtr&&, crypto::HashType)> callback);
-    void batchBlockCommit(std::function<void(Error::UniquePtr&&)> callback);
-    void batchBlockRollback(std::function<void(Error::UniquePtr&&)> callback);
+    void batchNextBlock(std::function<void(Error::UniquePtr)> callback);
+    void batchGetHashes(std::function<void(Error::UniquePtr, crypto::HashType)> callback);
+    void batchBlockCommit(std::function<void(Error::UniquePtr)> callback);
+    void batchBlockRollback(std::function<void(Error::UniquePtr)> callback);
 
     struct BatchStatus  // Batch state per batch
     {
         std::atomic_size_t total = 0;
         std::atomic_size_t received = 0;
 
-        std::function<void(Error::UniquePtr&&)> callback;
+        std::function<void(Error::UniquePtr)> callback;
         std::atomic_bool callbackExecuted = false;
         std::atomic_bool allSended = false;
     };
-    void startBatch(std::function<void(Error::UniquePtr&&)> callback);
+    void startBatch(std::function<void(Error::UniquePtr)> callback);
     void checkBatch(BatchStatus& status);
 
     std::string newEVMAddress(int64_t blockNumber, int64_t contextID, int64_t seq);

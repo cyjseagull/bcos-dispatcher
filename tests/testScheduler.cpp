@@ -14,6 +14,7 @@
 #include "mock/MockExecutorForCall.h"
 #include "mock/MockExecutorForCreate.h"
 #include "mock/MockLedger.h"
+#include "mock/MockMultiParallelExecutor.h"
 #include "mock/MockTransactionalStorage.h"
 #include <bcos-framework/libexecutor/NativeExecutionMessage.h>
 #include <bcos-framework/testutils/crypto/HashImpl.h>
@@ -25,6 +26,7 @@
 #include <bcos-tars-protocol/TransactionReceiptFactoryImpl.h>
 #include <boost/exception/diagnostic_information.hpp>
 #include <boost/test/unit_test.hpp>
+#include <future>
 
 namespace bcos::test
 {
@@ -139,7 +141,86 @@ BOOST_AUTO_TEST_CASE(executeBlock)
 
     BOOST_CHECK(commited);
     BOOST_CHECK_EQUAL(notifyBlockNumber, 100);
+}
 
+BOOST_AUTO_TEST_CASE(parallelExecuteBlock)
+{
+    // Add executor
+    executorManager->addExecutor(
+        "executor1", std::make_shared<MockMultiParallelExecutor>("executor1"));
+
+    // Generate a test block
+    auto block = blockFactory->createBlock();
+    block->blockHeader()->setNumber(100);
+
+    for (size_t i = 0; i < 1000; ++i)
+    {
+        for (size_t j = 0; j < 8; ++j)
+        {
+            auto metaTx = std::make_shared<bcostars::protocol::TransactionMetaDataImpl>(
+                h256(i * j), "contract" + boost::lexical_cast<std::string>(j));
+            block->appendTransactionMetaData(std::move(metaTx));
+        }
+    }
+
+    std::promise<bcos::protocol::BlockHeader::Ptr> executedHeader;
+
+    scheduler->executeBlock(
+        block, false, [&](bcos::Error::Ptr error, bcos::protocol::BlockHeader::Ptr header) {
+            BOOST_CHECK(!error);
+            BOOST_CHECK(header);
+
+            executedHeader.set_value(std::move(header));
+        });
+
+    auto header = executedHeader.get_future().get();
+
+    BOOST_CHECK(header);
+    BOOST_CHECK_NE(header->stateRoot(), h256());
+
+    bcos::protocol::BlockNumber notifyBlockNumber = 0;
+    scheduler->registerBlockNumberReceiver(
+        [&](protocol::BlockNumber number) { notifyBlockNumber = number; });
+
+    std::promise<void> commitPromise;
+    scheduler->commitBlock(
+        header, [&](bcos::Error::Ptr&& error, bcos::ledger::LedgerConfig::Ptr&& config) {
+            BOOST_CHECK(!error);
+            BOOST_CHECK(config);
+            BOOST_CHECK_EQUAL(config->blockTxCountLimit(), 100);
+            BOOST_CHECK_EQUAL(config->consensusTimeout(), 200);
+            BOOST_CHECK_EQUAL(config->leaderSwitchPeriod(), 300);
+            BOOST_CHECK_EQUAL(config->consensusNodeList().size(), 1);
+            BOOST_CHECK_EQUAL(config->observerNodeList().size(), 2);
+            BOOST_CHECK_EQUAL(config->hash().hex(), h256(110).hex());
+
+            commitPromise.set_value();
+        });
+
+    commitPromise.get_future().get();
+
+    BOOST_CHECK_EQUAL(notifyBlockNumber, 100);
+}
+
+BOOST_AUTO_TEST_CASE(keyLocks)
+{
+    // Add executor
+    executorManager->addExecutor(
+        "executor1", std::make_shared<MockMultiParallelExecutor>("executor1"));
+
+    // Generate a test block
+    auto block = blockFactory->createBlock();
+    block->blockHeader()->setNumber(100);
+
+    for (size_t i = 0; i < 1000; ++i)
+    {
+        for (size_t j = 0; j < 8; ++j)
+        {
+            auto metaTx = std::make_shared<bcostars::protocol::TransactionMetaDataImpl>(
+                h256(i * j), "contract" + boost::lexical_cast<std::string>(j));
+            block->appendTransactionMetaData(std::move(metaTx));
+        }
+    }
 }
 
 BOOST_AUTO_TEST_CASE(call)

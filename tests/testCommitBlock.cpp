@@ -1,7 +1,6 @@
 #include "bcos-scheduler/BlockExecutive.h"
 #include "bcos-scheduler/ExecutorManager.h"
 #include "bcos-scheduler/SchedulerImpl.h"
-#include "bcos-storage/RocksDBStorage.h"
 #include "interfaces/crypto/CryptoSuite.h"
 #include "interfaces/executor/ExecutionMessage.h"
 #include "interfaces/ledger/LedgerInterface.h"
