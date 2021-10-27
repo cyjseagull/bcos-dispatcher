@@ -6,27 +6,33 @@
 #include "interfaces/ledger/LedgerInterface.h"
 #include "interfaces/protocol/BlockHeaderFactory.h"
 #include "interfaces/protocol/ProtocolTypeDef.h"
+#include "interfaces/protocol/Transaction.h"
 #include "interfaces/protocol/TransactionReceipt.h"
 #include "interfaces/protocol/TransactionReceiptFactory.h"
+#include "interfaces/protocol/TransactionSubmitResult.h"
 #include "interfaces/storage/StorageInterface.h"
+#include "libprotocol/TransactionSubmitResultFactoryImpl.h"
 #include "mock/MockExecutor.h"
 #include "mock/MockExecutor3.h"
 #include "mock/MockExecutorForCall.h"
 #include "mock/MockExecutorForCreate.h"
 #include "mock/MockLedger.h"
 #include "mock/MockMultiParallelExecutor.h"
+#include "mock/MockRPC.h"
 #include "mock/MockTransactionalStorage.h"
 #include <bcos-framework/libexecutor/NativeExecutionMessage.h>
 #include <bcos-framework/testutils/crypto/HashImpl.h>
 #include <bcos-framework/testutils/crypto/SignatureImpl.h>
-#include <bcos-tars-protocol/BlockFactoryImpl.h>
-#include <bcos-tars-protocol/BlockHeaderFactoryImpl.h>
-#include <bcos-tars-protocol/TransactionFactoryImpl.h>
-#include <bcos-tars-protocol/TransactionMetaDataImpl.h>
-#include <bcos-tars-protocol/TransactionReceiptFactoryImpl.h>
+#include <bcos-tars-protocol/protocol/BlockFactoryImpl.h>
+#include <bcos-tars-protocol/protocol/BlockHeaderFactoryImpl.h>
+#include <bcos-tars-protocol/protocol/TransactionFactoryImpl.h>
+#include <bcos-tars-protocol/protocol/TransactionMetaDataImpl.h>
+#include <bcos-tars-protocol/protocol/TransactionReceiptFactoryImpl.h>
 #include <boost/exception/diagnostic_information.hpp>
 #include <boost/test/unit_test.hpp>
+#include <boost/thread/latch.hpp>
 #include <future>
+#include <memory>
 
 namespace bcos::test
 {
@@ -53,8 +59,34 @@ struct SchedulerFixture
         blockFactory = std::make_shared<bcostars::protocol::BlockFactoryImpl>(
             suite, blockHeaderFactory, transactionFactory, transactionReceiptFactory);
 
-        scheduler = std::make_shared<scheduler::SchedulerImpl>(
-            executorManager, ledger, storage, executionMessageFactory, blockFactory, hashImpl);
+        transactionSubmitResultFactory =
+            std::make_shared<bcos::protocol::TransactionSubmitResultFactoryImpl>();
+
+        auto notifier = [latch = &latch](bcos::crypto::HashType,
+                            bcos::protocol::TransactionSubmitResult::Ptr result) {
+            SCHEDULER_LOG(TRACE) << "Submit callback execute";
+
+            BOOST_CHECK_EQUAL(result->status(), 0);
+            BOOST_CHECK_NE(result->blockHash(), h256(0));
+            BOOST_CHECK(result->transactionReceipt());
+            BOOST_CHECK_LT(result->transactionIndex(), 1000 * 8);
+
+            auto receipt = result->transactionReceipt();
+            auto output = receipt->output();
+            std::string_view outputStr((char*)output.data(), output.size());
+            BOOST_CHECK_EQUAL(outputStr, "Hello world!");
+
+            if (latch)
+            {
+                latch->get()->count_down();
+            }
+        };
+
+        scheduler = std::make_shared<scheduler::SchedulerImpl>(executorManager, ledger, storage,
+            executionMessageFactory, blockFactory, transactionSubmitResultFactory, hashImpl);
+
+        std::dynamic_pointer_cast<scheduler::SchedulerImpl>(scheduler)->registerTransactionNotifier(
+            std::move(notifier));
 
         keyPair = suite->signatureImpl()->generateKeyPair();
     }
@@ -73,6 +105,9 @@ struct SchedulerFixture
     bcos::crypto::SignatureCrypto::Ptr signature;
     bcos::crypto::CryptoSuite::Ptr suite;
     bcostars::protocol::BlockFactoryImpl::Ptr blockFactory;
+    bcos::protocol::TransactionSubmitResultFactory::Ptr transactionSubmitResultFactory;
+
+    std::unique_ptr<boost::latch> latch;
 };
 
 BOOST_FIXTURE_TEST_SUITE(Scheduler, SchedulerFixture)
@@ -153,12 +188,14 @@ BOOST_AUTO_TEST_CASE(parallelExecuteBlock)
     auto block = blockFactory->createBlock();
     block->blockHeader()->setNumber(100);
 
+    latch = std::make_unique<boost::latch>(8 * 1000);
     for (size_t i = 0; i < 1000; ++i)
     {
         for (size_t j = 0; j < 8; ++j)
         {
             auto metaTx = std::make_shared<bcostars::protocol::TransactionMetaDataImpl>(
-                h256(i * j), "contract" + boost::lexical_cast<std::string>(j));
+                h256((i + 1) * (j + 1)), "contract" + boost::lexical_cast<std::string>(j));
+            metaTx->setSource("i am a source!");
             block->appendTransactionMetaData(std::move(metaTx));
         }
     }
@@ -200,6 +237,8 @@ BOOST_AUTO_TEST_CASE(parallelExecuteBlock)
     commitPromise.get_future().get();
 
     BOOST_CHECK_EQUAL(notifyBlockNumber, 100);
+
+    latch->wait();
 }
 
 BOOST_AUTO_TEST_CASE(keyLocks)
@@ -273,7 +312,10 @@ BOOST_AUTO_TEST_CASE(createContract)
     auto block = blockFactory->createBlock();
     block->blockHeader()->setNumber(100);
 
-    auto metaTx = std::make_shared<bcostars::protocol::TransactionMetaDataImpl>(h256(1), "");
+    auto metaTx = std::make_shared<bcostars::protocol::TransactionMetaDataImpl>(
+        [inner = bcostars::TransactionMetaData()]() mutable { return &inner; });
+    metaTx->setHash(h256(1));
+    metaTx->setTo("");
     block->appendTransactionMetaData(std::move(metaTx));
 
     bcos::protocol::BlockHeader::Ptr executedHeader;

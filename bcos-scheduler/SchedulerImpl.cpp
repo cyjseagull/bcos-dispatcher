@@ -68,7 +68,7 @@ void SchedulerImpl::executeBlock(bcos::protocol::Block::Ptr block, bool verify,
         }
     }
 
-    m_blocks.emplace_back(std::move(block), this, 0, false);
+    m_blocks.emplace_back(std::move(block), this, 0, m_transactionSubmitResultFactory, false);
 
     auto executeLockPtr = std::make_shared<decltype(executeLock)>(std::move(executeLock));
     m_blocks.back().asyncExecute([callback = std::move(callback), executeLock =
@@ -162,10 +162,14 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
             SCHEDULER_LOG(INFO) << "Commit block success"
                                 << LOG_KV("block number", ledgerConfig->blockNumber());
 
-            std::unique_lock<std::mutex> blocksLock(m_blocksMutex);
-            // this pointer is released
-            m_blocks.pop_front();
+            auto& executive = m_blocks.front();
+            if (m_txNotifier)
+            {
+                executive.asyncNotify(m_txNotifier);
+            }
 
+            std::unique_lock<std::mutex> blocksLock(m_blocksMutex);
+            m_blocks.pop_front();
             SCHEDULER_LOG(DEBUG) << "Remove committed block: " << ledgerConfig->blockNumber()
                                  << " success";
 
@@ -193,8 +197,8 @@ void SchedulerImpl::call(protocol::Transaction::Ptr tx,
     block->appendTransaction(std::move(tx));
 
     // Create temp executive
-    auto blockExecutive =
-        std::make_shared<BlockExecutive>(std::move(block), this, m_calledContextID++, true);
+    auto blockExecutive = std::make_shared<BlockExecutive>(
+        std::move(block), this, m_calledContextID++, m_transactionSubmitResultFactory, true);
 
     blockExecutive->asyncExecute([executive = blockExecutive, callback = std::move(callback)](
                                      Error::UniquePtr&& error, protocol::BlockHeader::Ptr) {
@@ -250,6 +254,13 @@ void SchedulerImpl::registerBlockNumberReceiver(
     std::function<void(protocol::BlockNumber blockNumber)> callback)
 {
     m_blockNumberReceiver = std::move(callback);
+}
+
+void SchedulerImpl::registerTransactionNotifier(
+    std::function<void(bcos::crypto::HashType, bcos::protocol::TransactionSubmitResult::Ptr)>
+        txNotifier)
+{
+    m_txNotifier = std::move(txNotifier);
 }
 
 template <class... Ts>

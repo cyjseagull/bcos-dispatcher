@@ -19,7 +19,7 @@ using namespace bcos::scheduler;
 using namespace bcos::ledger;
 
 void BlockExecutive::asyncExecute(
-    std::function<void(Error::UniquePtr, protocol::BlockHeader::Ptr)> callback) noexcept
+    std::function<void(Error::UniquePtr, protocol::BlockHeader::Ptr)> callback)
 {
     if (m_result)
     {
@@ -55,6 +55,12 @@ void BlockExecutive::asyncExecute(
             message->setStaticCall(false);
 
             m_executiveStates.emplace_back(i, std::move(message));
+
+            if (!metaData->source().empty())
+            {
+                m_executiveResults[i].transactionHash = metaData->hash();
+                m_executiveResults[i].source = metaData->source();
+            }
         }
     }
     else if (m_block->transactionsSize() > 0)
@@ -143,7 +149,7 @@ void BlockExecutive::asyncExecute(
                         // Set result to m_block
                         for (auto& it : m_self->m_executiveResults)
                         {
-                            m_self->m_block->appendReceipt(std::move(it.receipt));
+                            m_self->m_block->appendReceipt(it.receipt);
                         }
 
                         m_callback(nullptr, nullptr);
@@ -169,10 +175,10 @@ void BlockExecutive::asyncExecute(
                             // Set result to m_block
                             for (auto& it : self->m_executiveResults)
                             {
-                                self->m_block->appendReceipt(std::move(it.receipt));
+                                self->m_block->appendReceipt(it.receipt);
                             }
 
-                            self->m_block->blockHeader()->setStateRoot(std::move(hash));
+                            self->m_block->blockHeader()->setStateRoot(hash);
                             self->m_block->blockHeader()->setGasUsed(self->m_gasUsed);
                             self->m_block->blockHeader()->setReceiptsRoot(h256(0));  // TODO: calc
                                                                                      // the receipt
@@ -205,7 +211,7 @@ void BlockExecutive::asyncExecute(
     }
 }
 
-void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr)> callback) noexcept
+void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr)> callback)
 {
     auto stateStorage = std::make_shared<storage::StateStorage>(m_scheduler->m_storage);
 
@@ -314,6 +320,29 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr)> callback)
                         });
                 });
         });
+}
+
+void BlockExecutive::asyncNotify(
+    std::function<void(bcos::crypto::HashType, bcos::protocol::TransactionSubmitResult::Ptr)>&
+        notifier)
+{
+    auto blockHash = m_block->blockHeaderConst()->hash();
+
+    size_t index = 0;
+    for (auto& it : m_executiveResults)
+    {
+        if (!it.source.empty())
+        {
+            auto submitResult = m_transactionSubmitResultFactory->createTxSubmitResult();
+            submitResult->setTransactionIndex(index++);
+            submitResult->setBlockHash(blockHash);
+            submitResult->setTxHash(it.transactionHash);
+            submitResult->setStatus(it.receipt->status());
+            submitResult->setTransactionReceipt(it.receipt);
+
+            notifier(it.transactionHash, std::move(submitResult));
+        }
+    }
 }
 
 void BlockExecutive::batchNextBlock(std::function<void(Error::UniquePtr)> callback)
@@ -738,8 +767,8 @@ void BlockExecutive::checkBatch(BatchStatus& status)
             }
 
             SCHEDULER_LOG(TRACE) << "Batch run success"
-                                << " total: " << errorCount + successCount
-                                << " success: " << successCount << " error: " << errorCount;
+                                 << " total: " << errorCount + successCount
+                                 << " success: " << successCount << " error: " << errorCount;
 
             if (errorCount > 0)
             {
