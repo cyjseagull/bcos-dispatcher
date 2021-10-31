@@ -2,6 +2,7 @@
 #include "bcos-scheduler/Common.h"
 #include "interfaces/executor/ParallelTransactionExecutorInterface.h"
 #include "interfaces/protocol/ProtocolTypeDef.h"
+#include <boost/core/ignore_unused.hpp>
 #include <boost/test/unit_test.hpp>
 
 namespace bcos::test
@@ -50,7 +51,35 @@ public:
         std::function<void(
             bcos::Error::UniquePtr, std::vector<bcos::protocol::ExecutionMessage::UniquePtr>)>
             callback) override
-    {}
+    {
+        BOOST_CHECK_EQUAL(inputs.size(), 100);
+
+        std::vector<bcos::protocol::ExecutionMessage::UniquePtr> messages(inputs.size());
+        for (decltype(inputs)::index_type i = 0; i < inputs.size(); ++i)
+        {
+            auto [it, inserted] = m_dagHashes.emplace(inputs[i]->transactionHash());
+            boost::ignore_unused(it);
+            BOOST_TEST(inserted);
+
+            // SCHEDULER_LOG(TRACE) << "Executing: " << inputs[i].get();
+            BOOST_TEST(inputs[i].get());
+            BOOST_CHECK_EQUAL(inputs[i]->type(), protocol::ExecutionMessage::TXHASH);
+            messages.at(i) = std::move(inputs[i]);
+            if (i < 50)
+            {
+                messages[i]->setType(protocol::ExecutionMessage::SEND_BACK);
+            }
+            else
+            {
+                messages[i]->setType(protocol::ExecutionMessage::FINISHED);
+
+                std::string result = "OK!";
+                messages[i]->setData(bcos::bytes(result.begin(), result.end()));
+            }
+        }
+
+        callback(nullptr, std::move(messages));
+    }
 
     void call(bcos::protocol::ExecutionMessage::UniquePtr input,
         std::function<void(bcos::Error::UniquePtr, bcos::protocol::ExecutionMessage::UniquePtr)>
@@ -83,6 +112,7 @@ public:
 
     std::string m_name;
     bcos::protocol::BlockNumber m_blockNumber = 0;
+    std::set<bcos::crypto::HashType> m_dagHashes;
 };
 #pragma GCC diagnostic pop
 }  // namespace bcos::test

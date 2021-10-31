@@ -10,10 +10,12 @@
 #include <boost/algorithm/hex.hpp>
 #include <boost/exception/diagnostic_information.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/thread/latch.hpp>
 #include <atomic>
 #include <chrono>
 #include <iterator>
 #include <thread>
+#include <utility>
 
 using namespace bcos::scheduler;
 using namespace bcos::ledger;
@@ -29,6 +31,7 @@ void BlockExecutive::asyncExecute(
 
     m_currentTimePoint = std::chrono::system_clock::now();
 
+    bool withDAG = false;
     if (m_block->transactionsMetaDataSize() > 0)
     {
         m_executiveResults.resize(m_block->transactionsMetaDataSize());
@@ -54,12 +57,18 @@ void BlockExecutive::asyncExecute(
             message->setGasAvailable(TRANSACTION_GAS);
             message->setStaticCall(false);
 
-            m_executiveStates.emplace_back(i, std::move(message));
+            auto& executive = m_executiveStates.emplace_back(i, std::move(message));
 
             if (!metaData->source().empty())
             {
                 m_executiveResults[i].transactionHash = metaData->hash();
                 m_executiveResults[i].source = metaData->source();
+            }
+
+            if (metaData->attribute() & bcos::protocol::Transaction::Attribute::DAG)
+            {
+                executive.enableDAG = true;
+                withDAG = true;
             }
         }
     }
@@ -96,118 +105,56 @@ void BlockExecutive::asyncExecute(
             message->setStaticCall(m_staticCall);
 
             m_executiveStates.emplace_back(i, std::move(message));
+
+            if (tx->attribute() & bcos::protocol::Transaction::Attribute::DAG)
+            {
+                SCHEDULER_LOG(ERROR) << "Execute transactions with dag!";
+                callback(BCOS_ERROR_UNIQUE_PTR(
+                             SchedulerError::UnknownError, "Execute transactions with dag!"),
+                    nullptr);
+            }
         }
     }
 
-    auto startExecute = [this, callback = std::move(callback)](Error::UniquePtr&& error) {
-        if (error)
-        {
-            SCHEDULER_LOG(ERROR) << "Next block with error!"
-                                 << boost::diagnostic_information(*error);
-            callback(BCOS_ERROR_WITH_PREV_UNIQUE_PTR(
-                         SchedulerError::NextBlockError, "Next block error!", *error),
-                nullptr);
-            return;
-        }
-
-        class BatchCallback : public std::enable_shared_from_this<BatchCallback>
-        {
-        public:
-            BatchCallback(BlockExecutive* self,
-                std::function<void(Error::UniquePtr&&, protocol::BlockHeader::Ptr)> callback)
-              : m_self(self), m_callback(std::move(callback))
-            {}
-
-            void operator()(Error::UniquePtr&& error) const
+    if (!m_staticCall)
+    {
+        // Execute nextBlock
+        batchNextBlock([this, withDAG, callback = std::move(callback)](Error::UniquePtr error) {
+            if (error)
             {
-                if (error)
-                {
-                    m_callback(BCOS_ERROR_WITH_PREV_UNIQUE_PTR(-1, "Execute with errors", *error),
-                        nullptr);
-                    return;
-                }
-
-                if (!m_self->m_executiveStates.empty())
-                {
-                    SCHEDULER_LOG(TRACE) << "Non empty states, continue startBatch";
-                    m_self->m_calledContract.clear();
-
-                    m_self->startBatch(std::bind(
-                        &BatchCallback::operator(), shared_from_this(), std::placeholders::_1));
-                }
-                else
-                {
-                    SCHEDULER_LOG(TRACE) << "Empty states, end";
-                    auto now = std::chrono::system_clock::now();
-                    m_self->m_executeElapsed =
-                        std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::system_clock::now() - m_self->m_currentTimePoint);
-                    m_self->m_currentTimePoint = now;
-
-                    if (m_self->m_staticCall)
-                    {
-                        // Set result to m_block
-                        for (auto& it : m_self->m_executiveResults)
-                        {
-                            m_self->m_block->appendReceipt(it.receipt);
-                        }
-
-                        m_callback(nullptr, nullptr);
-                    }
-                    else
-                    {
-                        // All Transaction finished, get hash
-                        m_self->batchGetHashes([self = m_self, callback = std::move(m_callback)](
-                                                   Error::UniquePtr&& error,
-                                                   crypto::HashType hash) {
-                            if (error)
-                            {
-                                callback(BCOS_ERROR_WITH_PREV_UNIQUE_PTR(
-                                             SchedulerError::UnknownError, "Unknown error", *error),
-                                    nullptr);
-                                return;
-                            }
-
-                            self->m_hashElapsed =
-                                std::chrono::duration_cast<std::chrono::milliseconds>(
-                                    std::chrono::system_clock::now() - self->m_currentTimePoint);
-
-                            // Set result to m_block
-                            for (auto& it : self->m_executiveResults)
-                            {
-                                self->m_block->appendReceipt(it.receipt);
-                            }
-
-                            self->m_block->blockHeader()->setStateRoot(hash);
-                            self->m_block->blockHeader()->setGasUsed(self->m_gasUsed);
-                            self->m_block->blockHeader()->setReceiptsRoot(h256(0));  // TODO: calc
-                                                                                     // the receipt
-                                                                                     // root
-
-                            self->m_result = self->m_block->blockHeader();
-                            callback(nullptr, self->m_result);
-                        });
-                    }
-                }
+                SCHEDULER_LOG(ERROR)
+                    << "Next block with error!" << boost::diagnostic_information(*error);
+                callback(BCOS_ERROR_WITH_PREV_UNIQUE_PTR(
+                             SchedulerError::NextBlockError, "Next block error!", *error),
+                    nullptr);
+                return;
             }
 
-        private:
-            BlockExecutive* m_self;
-            std::function<void(Error::UniquePtr&&, protocol::BlockHeader::Ptr)> m_callback;
-        };
+            if (withDAG)
+            {
+                DAGExecute([this, callback = std::move(callback)](Error::UniquePtr error) {
+                    if (error)
+                    {
+                        SCHEDULER_LOG(ERROR) << "DAG execute block with error!"
+                                             << boost::diagnostic_information(*error);
+                        callback(BCOS_ERROR_WITH_PREV_UNIQUE_PTR(
+                                     SchedulerError::DAGError, "DAG execute error!", *error),
+                            nullptr);
+                        return;
+                    }
 
-        auto batchCallback = std::make_shared<BatchCallback>(this, std::move(callback));
-        startBatch(std::bind(&BatchCallback::operator(), batchCallback, std::placeholders::_1));
-    };
-
-    if (m_staticCall)
-    {
-        startExecute(nullptr);
+                    DMTExecute(std::move(callback));
+                });
+            }
+            else
+            {
+                DMTExecute(std::move(callback));
+            }
+        });
     }
     else
     {
-        // Execute nextBlock
-        batchNextBlock(std::move(startExecute));
+        DMTExecute(std::move(callback));
     }
 }
 
@@ -343,6 +290,168 @@ void BlockExecutive::asyncNotify(
             notifier(it.transactionHash, std::move(submitResult));
         }
     }
+}
+
+void BlockExecutive::DAGExecute(std::function<void(Error::UniquePtr)> callback)
+{
+    std::multimap<std::string, decltype(m_executiveStates)::iterator> requests;
+
+    for (auto it = m_executiveStates.begin(); it != m_executiveStates.end(); ++it)
+    {
+        if (it->enableDAG)
+        {
+            requests.emplace(it->message->to(), it);
+        }
+    }
+
+    if (requests.empty())
+    {
+        callback(nullptr);
+    }
+
+    auto totalCount = std::make_shared<std::atomic_size_t>(requests.size());
+    auto failed = std::make_shared<std::atomic_size_t>(0);
+    auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));
+
+    for (auto it = requests.begin(); it != requests.end(); it = requests.upper_bound(it->first))
+    {
+        SCHEDULER_LOG(TRACE) << "DAG contract: " << it->first;
+
+        auto executor = m_scheduler->m_executorManager->dispatchExecutor(it->first);
+        auto count = requests.count(it->first);
+        auto range = requests.equal_range(it->first);
+
+        auto messages = std::make_shared<std::vector<protocol::ExecutionMessage::UniquePtr>>(count);
+        auto iterators =
+            std::make_shared<std::vector<decltype(m_executiveStates)::iterator>>(count);
+        size_t i = 0;
+        for (auto messageIt = range.first; messageIt != range.second; ++messageIt)
+        {
+            SCHEDULER_LOG(TRACE) << "message: " << messageIt->second->message.get()
+                                 << " to: " << messageIt->first;
+            messageIt->second->callStack.push(messageIt->second->currentSeq++);
+            messages->at(i) = std::move(messageIt->second->message);
+            iterators->at(i) = messageIt->second;
+
+            ++i;
+        }
+
+        executor->dagExecuteTransactions(*messages,
+            [messages, iterators, totalCount, failed, callbackPtr](bcos::Error::UniquePtr error,
+                std::vector<bcos::protocol::ExecutionMessage::UniquePtr> responseMessages) {
+                *totalCount -= responseMessages.size();
+
+                if (error)
+                {
+                    ++(*failed);
+                    SCHEDULER_LOG(ERROR)
+                        << "DAG execute error: " << boost::diagnostic_information(*error);
+                }
+                else if (messages->size() != responseMessages.size())
+                {
+                    ++(*failed);
+                    SCHEDULER_LOG(ERROR) << "DAG messages mismatch!";
+                }
+                else
+                {
+                    for (size_t i = 0; i < responseMessages.size(); ++i)
+                    {
+                        (*iterators)[i]->message = std::move(responseMessages[i]);
+                    }
+                }
+
+                if (*totalCount == 0)
+                {
+                    if (*failed > 0)
+                    {
+                        (*callbackPtr)(BCOS_ERROR_UNIQUE_PTR(
+                            SchedulerError::DAGError, "Execute dag with errors"));
+                        return;
+                    }
+
+                    (*callbackPtr)(nullptr);
+                }
+            });
+    }
+}
+
+void BlockExecutive::DMTExecute(
+    std::function<void(Error::UniquePtr, protocol::BlockHeader::Ptr)> callback)
+{
+    startBatch([this, callback = std::move(callback)](Error::UniquePtr&& error) {
+        auto recursionCallback = std::make_shared<std::function<void(Error::UniquePtr)>>();
+
+        *recursionCallback = [this, recursionCallback, callback = std::move(callback)](
+                                 Error::UniquePtr error) {
+            if (error)
+            {
+                callback(
+                    BCOS_ERROR_WITH_PREV_UNIQUE_PTR(-1, "Execute with errors", *error), nullptr);
+                return;
+            }
+
+            if (!m_executiveStates.empty())
+            {
+                SCHEDULER_LOG(TRACE) << "Non empty states, continue startBatch";
+                m_calledContract.clear();
+
+                startBatch(*recursionCallback);
+            }
+            else
+            {
+                SCHEDULER_LOG(TRACE) << "Empty states, end";
+                auto now = std::chrono::system_clock::now();
+                m_executeElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now() - m_currentTimePoint);
+                m_currentTimePoint = now;
+
+                if (m_staticCall)
+                {
+                    // Set result to m_block
+                    for (auto& it : m_executiveResults)
+                    {
+                        m_block->appendReceipt(it.receipt);
+                    }
+
+                    callback(nullptr, nullptr);
+                }
+                else
+                {
+                    // All Transaction finished, get hash
+                    batchGetHashes([this, callback = std::move(callback)](
+                                       Error::UniquePtr&& error, crypto::HashType hash) {
+                        if (error)
+                        {
+                            callback(BCOS_ERROR_WITH_PREV_UNIQUE_PTR(
+                                         SchedulerError::UnknownError, "Unknown error", *error),
+                                nullptr);
+                            return;
+                        }
+
+                        m_hashElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::system_clock::now() - m_currentTimePoint);
+
+                        // Set result to m_block
+                        for (auto& it : m_executiveResults)
+                        {
+                            m_block->appendReceipt(it.receipt);
+                        }
+
+                        m_block->blockHeader()->setStateRoot(hash);
+                        m_block->blockHeader()->setGasUsed(m_gasUsed);
+                        m_block->blockHeader()->setReceiptsRoot(h256(0));  // TODO: calc
+                                                                           // the receipt
+                                                                           // root
+
+                        m_result = m_block->blockHeader();
+                        callback(nullptr, m_result);
+                    });
+                }
+            }
+        };
+
+        (*recursionCallback)(std::move(error));
+    });
 }
 
 void BlockExecutive::batchNextBlock(std::function<void(Error::UniquePtr)> callback)
@@ -626,8 +735,8 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
                 continue;
             }
             m_calledContract.emplace_hint(contractIt, it->message->to());
-            SCHEDULER_LOG(TRACE) << "Executing: " << it->message->transactionHash().hex() << " "
-                                 << it->message->to();
+            SCHEDULER_LOG(TRACE) << "Executing: " << std::hex << it->message->transactionHash()
+                                 << " " << it->message->to();
 
             auto seq = it->currentSeq++;
 
@@ -662,8 +771,8 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
                 m_gasUsed += (TRANSACTION_GAS - it->message->gasAvailable());
 
                 // Remove executive state and continue
-                SCHEDULER_LOG(TRACE) << "Eraseing: " << it->message->transactionHash().hex() << " "
-                                     << it->message->to();
+                SCHEDULER_LOG(TRACE) << "Eraseing: " << std::hex << it->message->transactionHash()
+                                     << " " << it->message->to();
 
                 it = m_executiveStates.erase(it);  // FIXME: bug jump to next it
                 deleted = true;

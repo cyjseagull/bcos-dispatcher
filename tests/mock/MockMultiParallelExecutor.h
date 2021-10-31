@@ -36,7 +36,11 @@ public:
         std::function<void(
             bcos::Error::UniquePtr, std::vector<bcos::protocol::ExecutionMessage::UniquePtr>)>
             callback) override
-    {}
+    {
+        m_taskGroup.run([this, inputs = std::move(inputs), callback = std::move(callback)]() {
+            MockParallelExecutor::dagExecuteTransactions(std::move(inputs), std::move(callback));
+        });
+    }
 
     void call(bcos::protocol::ExecutionMessage::UniquePtr input,
         std::function<void(bcos::Error::UniquePtr, bcos::protocol::ExecutionMessage::UniquePtr)>

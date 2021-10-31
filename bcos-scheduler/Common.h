@@ -17,6 +17,7 @@ enum SchedulerError
     CommitError,
     RollbackError,
     UnexpectedKeyLockError,
+    DAGError,
 };
 
 inline const uint64_t TRANSACTION_GAS = 30000000;

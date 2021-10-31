@@ -136,6 +136,7 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
         std::move(commitLock));  // std::function need copyable
 
     blocksLock.unlock();
+    frontBlock.block()->setBlockHeader(std::move(header));
     frontBlock.asyncCommit([this, callback = std::move(callback), block = frontBlock.block(),
                                commitLock = std::move(commitLockPtr)](Error::UniquePtr&& error) {
         if (error)
