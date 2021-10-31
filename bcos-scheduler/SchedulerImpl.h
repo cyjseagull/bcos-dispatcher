@@ -65,8 +65,8 @@ public:
     void registerBlockNumberReceiver(
         std::function<void(protocol::BlockNumber blockNumber)> callback) override;
 
-    void registerTransactionNotifier(
-        std::function<void(bcos::crypto::HashType, bcos::protocol::TransactionSubmitResult::Ptr)>
+    void registerTransactionNotifier(std::function<void(bcos::protocol::BlockNumber,
+            bcos::protocol::TransactionSubmitResultsPtr, std::function<void(Error::Ptr)>)>
             txNotifier);
 
 private:
@@ -90,7 +90,8 @@ private:
     bcos::crypto::Hash::Ptr m_hashImpl;
 
     std::function<void(protocol::BlockNumber blockNumber)> m_blockNumberReceiver;
-    std::function<void(bcos::crypto::HashType, bcos::protocol::TransactionSubmitResult::Ptr)>
+    std::function<void(bcos::protocol::BlockNumber, bcos::protocol::TransactionSubmitResultsPtr,
+        std::function<void(Error::Ptr)>)>
         m_txNotifier;
 };
 }  // namespace bcos::scheduler

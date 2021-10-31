@@ -68,7 +68,8 @@ void SchedulerImpl::executeBlock(bcos::protocol::Block::Ptr block, bool verify,
         }
     }
 
-    m_blocks.emplace_back(std::move(block), this, 0, m_transactionSubmitResultFactory, false);
+    m_blocks.emplace_back(
+        std::move(block), this, 0, m_transactionSubmitResultFactory, false, verify);
 
     auto executeLockPtr = std::make_shared<decltype(executeLock)>(std::move(executeLock));
     m_blocks.back().asyncExecute([callback = std::move(callback), executeLock =
@@ -164,22 +165,24 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
                                 << LOG_KV("block number", ledgerConfig->blockNumber());
 
             auto& executive = m_blocks.front();
+            auto blockNumber = ledgerConfig->blockNumber();
             if (m_txNotifier)
             {
-                executive.asyncNotify(m_txNotifier);
+                executive.asyncNotify(
+                    m_txNotifier, [this, blockNumber, callback, ledgerConfig](Error::Ptr _error) {
+                        if (m_blockNumberReceiver)
+                        {
+                            m_blockNumberReceiver(blockNumber);
+                        }
+                        // Note: only after the block notify finished can call the callback
+                        callback(std::move(_error),
+                            std::const_pointer_cast<bcos::ledger::LedgerConfig>(ledgerConfig));
+                    });
             }
 
             std::unique_lock<std::mutex> blocksLock(m_blocksMutex);
             m_blocks.pop_front();
-            SCHEDULER_LOG(DEBUG) << "Remove committed block: " << ledgerConfig->blockNumber()
-                                 << " success";
-
-            auto blockNumber = ledgerConfig->blockNumber();
-            callback(nullptr, std::move(ledgerConfig));
-            if (m_blockNumberReceiver)
-            {
-                m_blockNumberReceiver(blockNumber);
-            }
+            SCHEDULER_LOG(DEBUG) << "Remove committed block: " << blockNumber << " success";
         });
     });
 }
@@ -257,8 +260,8 @@ void SchedulerImpl::registerBlockNumberReceiver(
     m_blockNumberReceiver = std::move(callback);
 }
 
-void SchedulerImpl::registerTransactionNotifier(
-    std::function<void(bcos::crypto::HashType, bcos::protocol::TransactionSubmitResult::Ptr)>
+void SchedulerImpl::registerTransactionNotifier(std::function<void(bcos::protocol::BlockNumber,
+        bcos::protocol::TransactionSubmitResultsPtr, std::function<void(Error::Ptr)>)>
         txNotifier)
 {
     m_txNotifier = std::move(txNotifier);

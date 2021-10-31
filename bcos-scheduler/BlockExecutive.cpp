@@ -59,7 +59,7 @@ void BlockExecutive::asyncExecute(
 
             auto& executive = m_executiveStates.emplace_back(i, std::move(message));
 
-            if (!metaData->source().empty())
+            if (metaData)
             {
                 m_executiveResults[i].transactionHash = metaData->hash();
                 m_executiveResults[i].source = metaData->source();
@@ -78,6 +78,8 @@ void BlockExecutive::asyncExecute(
         for (size_t i = 0; i < m_block->transactionsSize(); ++i)
         {
             auto tx = m_block->transaction(i);
+            m_executiveResults[i].transactionHash = tx->hash();
+            m_executiveResults[i].source = tx->source();
 
             auto message = m_scheduler->m_executionMessageFactory->createExecutionMessage();
             message->setType(protocol::ExecutionMessage::MESSAGE);
@@ -270,26 +272,52 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr)> callback)
 }
 
 void BlockExecutive::asyncNotify(
-    std::function<void(bcos::crypto::HashType, bcos::protocol::TransactionSubmitResult::Ptr)>&
-        notifier)
+    std::function<void(bcos::protocol::BlockNumber, bcos::protocol::TransactionSubmitResultsPtr,
+        std::function<void(Error::Ptr)>)>& notifier,
+    std::function<void(Error::Ptr)> _callback)
 {
-    auto blockHash = m_block->blockHeaderConst()->hash();
-
+    if (!notifier)
+    {
+        return;
+    }
+    auto results = std::make_shared<bcos::protocol::TransactionSubmitResults>();
+    auto blockHeader = m_block->blockHeaderConst();
+    auto blockHash = blockHeader->hash();
     size_t index = 0;
     for (auto& it : m_executiveResults)
     {
-        if (!it.source.empty())
+        auto submitResult = m_transactionSubmitResultFactory->createTxSubmitResult();
+        submitResult->setTransactionIndex(index);
+        submitResult->setBlockHash(blockHash);
+        submitResult->setTxHash(it.transactionHash);
+        submitResult->setStatus(it.receipt->status());
+        submitResult->setTransactionReceipt(it.receipt);
+        if (m_syncBlock)
         {
-            auto submitResult = m_transactionSubmitResultFactory->createTxSubmitResult();
-            submitResult->setTransactionIndex(index++);
-            submitResult->setBlockHash(blockHash);
-            submitResult->setTxHash(it.transactionHash);
-            submitResult->setStatus(it.receipt->status());
-            submitResult->setTransactionReceipt(it.receipt);
-
-            notifier(it.transactionHash, std::move(submitResult));
+            auto tx = m_block->transaction(index);
+            submitResult->setNonce(tx->nonce());
         }
+        index++;
+        results->emplace_back(submitResult);
     }
+    auto txsSize = m_executiveResults.size();
+    notifier(blockHeader->number(), results, [_callback, blockHeader, txsSize](Error::Ptr _error) {
+        if (_callback)
+        {
+            _callback(_error);
+        }
+        if (_error == nullptr)
+        {
+            SCHEDULER_LOG(INFO) << LOG_DESC("notify block result success")
+                                << LOG_KV("number", blockHeader->number())
+                                << LOG_KV("hash", blockHeader->hash().abridged())
+                                << LOG_KV("txsSize", txsSize);
+            return;
+        }
+        SCHEDULER_LOG(INFO) << LOG_DESC("notify block result failed")
+                            << LOG_KV("code", _error->errorCode())
+                            << LOG_KV("msg", _error->errorMessage());
+    });
 }
 
 void BlockExecutive::DAGExecute(std::function<void(Error::UniquePtr)> callback)
