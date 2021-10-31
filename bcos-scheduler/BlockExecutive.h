@@ -44,6 +44,15 @@ public:
         m_staticCall(staticCall)
     {}
 
+    BlockExecutive(bcos::protocol::Block::Ptr block, SchedulerImpl* scheduler,
+        size_t startContextID,
+        bcos::protocol::TransactionSubmitResultFactory::Ptr transactionSubmitResultFactory,
+        bool staticCall, bool _syncBlock)
+      : BlockExecutive(block, scheduler, startContextID, transactionSubmitResultFactory, staticCall)
+    {
+        m_syncBlock = _syncBlock;
+    }
+
     BlockExecutive(const BlockExecutive&) = delete;
     BlockExecutive(BlockExecutive&&) = delete;
     BlockExecutive& operator=(const BlockExecutive&) = delete;
@@ -54,8 +63,9 @@ public:
     void asyncCommit(std::function<void(Error::UniquePtr)> callback);
 
     void asyncNotify(
-        std::function<void(bcos::crypto::HashType, bcos::protocol::TransactionSubmitResult::Ptr)>&
-            notifier);
+        std::function<void(bcos::protocol::BlockNumber, bcos::protocol::TransactionSubmitResultsPtr,
+            std::function<void(Error::Ptr)>)>& notifier,
+        std::function<void(Error::Ptr)> _callback);
 
     bcos::protocol::BlockNumber number() { return m_block->blockHeaderConst()->number(); }
 
@@ -139,5 +149,6 @@ private:
     size_t m_startContextID;
     bcos::protocol::TransactionSubmitResultFactory::Ptr m_transactionSubmitResultFactory;
     bool m_staticCall = false;
+    bool m_syncBlock = false;
 };
 }  // namespace bcos::scheduler

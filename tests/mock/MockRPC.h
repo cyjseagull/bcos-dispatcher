@@ -21,7 +21,7 @@ public:
         std::function<void(Error::Ptr)> _callback) override
     {}
 
-    void asyncNotifyTransactionResult(const std::string_view& groupID,
+    void asyncNotifyTransactionResult(std::string const&, const std::string_view& groupID,
         bcos::crypto::HashType txHash, bcos::protocol::TransactionSubmitResult::Ptr result) override
     {
         SCHEDULER_LOG(TRACE) << "Submit callback execute";
