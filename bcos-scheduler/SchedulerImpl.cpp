@@ -37,7 +37,7 @@ void SchedulerImpl::executeBlock(bcos::protocol::Block::Ptr block, bool verify,
         auto& backBlock = m_blocks.back();
 
         // Block already executed
-        if (requestNumber >= frontBlock.number() && requestNumber < backBlock.number())
+        if (requestNumber >= frontBlock.number() && requestNumber <= backBlock.number())
         {
             SCHEDULER_LOG(INFO) << "ExecuteBlock success, return executed block"
                                 << LOG_KV("block number", block->blockHeaderConst()->number())
