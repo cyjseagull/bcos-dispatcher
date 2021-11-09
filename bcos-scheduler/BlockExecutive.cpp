@@ -251,22 +251,22 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr)> callback)
                     executorParams.primaryTableName = SYS_CURRENT_STATE;
                     executorParams.primaryTableKey = SYS_KEY_CURRENT_NUMBER;
                     executorParams.startTS = startTimeStamp;
-                    tbb::parallel_for_each(m_scheduler->m_executorManager->begin(),
-                        m_scheduler->m_executorManager->end(), [&](auto const& executorIt) {
-                            executorIt->prepare(executorParams, [status](Error::Ptr&& error) {
-                                if (error)
-                                {
-                                    ++status->failed;
-                                }
-                                else
-                                {
-                                    ++status->success;
-                                    SCHEDULER_LOG(DEBUG)
-                                        << "Prepare executor success, success: " << status->success;
-                                }
-                                status->checkAndCommit(*status);
-                            });
+                    for (auto& executorIt : *(m_scheduler->m_executorManager))
+                    {
+                        executorIt->prepare(executorParams, [status](Error::Ptr&& error) {
+                            if (error)
+                            {
+                                ++status->failed;
+                            }
+                            else
+                            {
+                                ++status->success;
+                                SCHEDULER_LOG(DEBUG)
+                                    << "Prepare executor success, success: " << status->success;
+                            }
+                            status->checkAndCommit(*status);
                         });
+                    }
                 });
         });
 }

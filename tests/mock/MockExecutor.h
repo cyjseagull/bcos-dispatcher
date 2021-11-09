@@ -110,6 +110,8 @@ public:
 
     void reset(std::function<void(bcos::Error::Ptr)> callback) override {}
 
+    void clear() { m_dagHashes.clear(); }
+
     std::string m_name;
     bcos::protocol::BlockNumber m_blockNumber = 0;
     std::set<bcos::crypto::HashType> m_dagHashes;

@@ -69,8 +69,8 @@ public:
 
     bcos::protocol::BlockNumber number() { return m_block->blockHeaderConst()->number(); }
 
-    bcos::protocol::Block::Ptr& block() { return m_block; }
-    bcos::protocol::BlockHeader::Ptr& result() { return m_result; }
+    bcos::protocol::Block::Ptr block() { return m_block; }
+    bcos::protocol::BlockHeader::Ptr result() { return m_result; }
 
     bool isCall() { return m_staticCall; }
 

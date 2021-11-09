@@ -12,7 +12,7 @@ class MockMultiParallelExecutor : public MockParallelExecutor
 {
 public:
     MockMultiParallelExecutor(const std::string& name) : MockParallelExecutor(name) {}
-    ~MockMultiParallelExecutor() noexcept override {}
+    ~MockMultiParallelExecutor() noexcept override { m_taskGroup.wait(); }
 
     void nextBlockHeader(const bcos::protocol::BlockHeader::ConstPtr& blockHeader,
         std::function<void(bcos::Error::UniquePtr)> callback) override

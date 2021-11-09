@@ -29,6 +29,7 @@
 #include <bcos-tars-protocol/protocol/TransactionMetaDataImpl.h>
 #include <bcos-tars-protocol/protocol/TransactionReceiptFactoryImpl.h>
 #include <boost/exception/diagnostic_information.hpp>
+#include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 #include <boost/thread/latch.hpp>
 #include <future>
@@ -191,14 +192,13 @@ BOOST_AUTO_TEST_CASE(parallelExecuteBlock)
     auto block = blockFactory->createBlock();
     block->blockHeader()->setNumber(100);
 
-    // latch = std::make_unique<boost::latch>(8 * 1000);
-    for (size_t i = 0; i < 1000; ++i)
+    for (size_t i = 0; i < 100; ++i)
     {
         for (size_t j = 0; j < 8; ++j)
         {
             auto metaTx = std::make_shared<bcostars::protocol::TransactionMetaDataImpl>(
                 h256((i + 1) * (j + 1)), "contract" + boost::lexical_cast<std::string>(j));
-            metaTx->setSource("i am a source!");
+            // metaTx->setSource("i am a source!");
             block->appendTransactionMetaData(std::move(metaTx));
         }
     }
@@ -239,8 +239,6 @@ BOOST_AUTO_TEST_CASE(parallelExecuteBlock)
     commitPromise.get_future().get();
 
     BOOST_CHECK_EQUAL(notifyBlockNumber, 100);
-
-    // latch->wait();
 }
 
 BOOST_AUTO_TEST_CASE(keyLocks)
@@ -363,6 +361,63 @@ BOOST_AUTO_TEST_CASE(dag)
 
     BOOST_CHECK(header);
     BOOST_CHECK_NE(header->stateRoot(), h256());
+}
+
+BOOST_AUTO_TEST_CASE(executedBlock)
+{
+    // Add executor
+    auto executor = std::make_shared<MockParallelExecutor>("executor1");
+    executorManager->addExecutor("executor1", executor);
+
+    size_t count = 10;
+    std::vector<bcos::crypto::HashType> hashes;
+    for (size_t blockNumber = 0; blockNumber < count; ++blockNumber)
+    {
+        // Generate a test block
+        auto block = blockFactory->createBlock();
+        block->blockHeader()->setNumber(blockNumber);
+
+        for (size_t i = 0; i < 1000; ++i)
+        {
+            auto metaTx = std::make_shared<bcostars::protocol::TransactionMetaDataImpl>(
+                h256(i + 1), "contract" + boost::lexical_cast<std::string>((i + 1) % 10));
+            metaTx->setAttribute(metaTx->attribute() | bcos::protocol::Transaction::Attribute::DAG);
+            block->appendTransactionMetaData(std::move(metaTx));
+        }
+
+        std::promise<bcos::protocol::BlockHeader::Ptr> executedHeader;
+        scheduler->executeBlock(
+            block, false, [&](bcos::Error::Ptr&& error, bcos::protocol::BlockHeader::Ptr&& header) {
+                BOOST_CHECK(!error);
+                BOOST_CHECK(header);
+
+                executedHeader.set_value(std::move(header));
+            });
+
+        auto header = executedHeader.get_future().get();
+
+        BOOST_CHECK(header);
+        BOOST_CHECK_NE(header->stateRoot(), h256());
+
+        SCHEDULER_LOG(TRACE) << "StateRoot: " << header->stateRoot();
+
+        hashes.emplace_back(header->stateRoot());
+
+        executor->clear();
+    }
+
+    for (size_t blockNumber = 0; blockNumber < count; ++blockNumber)
+    {
+        // Get the executed block
+        auto block = blockFactory->createBlock();
+        block->blockHeader()->setNumber(blockNumber);
+
+        scheduler->executeBlock(
+            block, false, [&](bcos::Error::Ptr&& error, bcos::protocol::BlockHeader::Ptr&& header) {
+                BOOST_CHECK(!error);
+                BOOST_CHECK_EQUAL(header->stateRoot().hex(), hashes[blockNumber].hex());
+            });
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

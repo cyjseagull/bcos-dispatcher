@@ -166,7 +166,7 @@ jobs:
       - name: install CentOS dependencies
         run: |
           yum install -y epel-release centos-release-scl
-          yum install -y git make gcc gcc-c++ glibc-static glibc-devel cmake3 ccache devtoolset-9 && source /opt/rh/devtoolset-9/enable
+          yum install -y git make gcc gcc-c++ glibc-static glibc-devel cmake3 ccache devtoolset-9 python-devel python3-devel && source /opt/rh/devtoolset-9/enable
           alias cmake='cmake3'
       - name: configure and compile
         run: |
