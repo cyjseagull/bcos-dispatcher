@@ -14,6 +14,7 @@
 #include "interfaces/protocol/BlockHeaderFactory.h"
 #include "interfaces/protocol/TransactionMetaData.h"
 #include "interfaces/protocol/TransactionReceiptFactory.h"
+#include <bcos-framework/interfaces/protocol/BlockFactory.h>
 #include <tbb/concurrent_unordered_map.h>
 #include <boost/iterator/iterator_categories.hpp>
 #include <boost/range/any_range.hpp>
@@ -36,19 +37,21 @@ public:
     BlockExecutive(bcos::protocol::Block::Ptr block, SchedulerImpl* scheduler,
         size_t startContextID,
         bcos::protocol::TransactionSubmitResultFactory::Ptr transactionSubmitResultFactory,
-        bool staticCall)
+        bool staticCall, bcos::protocol::BlockFactory::Ptr _blockFactory)
       : m_block(std::move(block)),
         m_scheduler(scheduler),
         m_startContextID(startContextID),
         m_transactionSubmitResultFactory(std::move(transactionSubmitResultFactory)),
-        m_staticCall(staticCall)
+        m_staticCall(staticCall),
+        m_blockFactory(_blockFactory)
     {}
 
     BlockExecutive(bcos::protocol::Block::Ptr block, SchedulerImpl* scheduler,
         size_t startContextID,
         bcos::protocol::TransactionSubmitResultFactory::Ptr transactionSubmitResultFactory,
-        bool staticCall, bool _syncBlock)
-      : BlockExecutive(block, scheduler, startContextID, transactionSubmitResultFactory, staticCall)
+        bool staticCall, bcos::protocol::BlockFactory::Ptr _blockFactory, bool _syncBlock)
+      : BlockExecutive(block, scheduler, startContextID, transactionSubmitResultFactory, staticCall,
+            _blockFactory)
     {
         m_syncBlock = _syncBlock;
     }
@@ -150,5 +153,6 @@ private:
     bcos::protocol::TransactionSubmitResultFactory::Ptr m_transactionSubmitResultFactory;
     bool m_staticCall = false;
     bool m_syncBlock = false;
+    bcos::protocol::BlockFactory::Ptr m_blockFactory;
 };
 }  // namespace bcos::scheduler

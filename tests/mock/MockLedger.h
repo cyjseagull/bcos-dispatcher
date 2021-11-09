@@ -65,10 +65,6 @@ public:
         {
             _onGetConfig(nullptr, "100", 100);
         }
-        else if (_key == ledger::SYSTEM_KEY_CONSENSUS_TIMEOUT)
-        {
-            _onGetConfig(nullptr, "200", 100);
-        }
         else if (_key == ledger::SYSTEM_KEY_CONSENSUS_LEADER_PERIOD)
         {
             _onGetConfig(nullptr, "300", 100);

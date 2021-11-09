@@ -15,9 +15,10 @@ using namespace bcos::scheduler;
 void SchedulerImpl::executeBlock(bcos::protocol::Block::Ptr block, bool verify,
     std::function<void(bcos::Error::Ptr&&, bcos::protocol::BlockHeader::Ptr&&)> callback)
 {
+    auto signature = block->blockHeaderConst()->signatureList();
     SCHEDULER_LOG(INFO) << "ExecuteBlock request"
                         << LOG_KV("block number", block->blockHeaderConst()->number())
-                        << LOG_KV("verify", verify);
+                        << LOG_KV("verify", verify) << LOG_KV("signatureSize", signature.size());
 
     std::unique_lock<std::mutex> executeLock(m_executeMutex, std::try_to_lock);
     if (!executeLock.owns_lock())
@@ -76,7 +77,7 @@ void SchedulerImpl::executeBlock(bcos::protocol::Block::Ptr block, bool verify,
     }
 
     m_blocks.emplace_back(
-        std::move(block), this, 0, m_transactionSubmitResultFactory, false, verify);
+        std::move(block), this, 0, m_transactionSubmitResultFactory, false, m_blockFactory, verify);
 
     auto executeLockPtr = std::make_shared<decltype(executeLock)>(std::move(executeLock));
     auto& blockExecutive = m_blocks.back();
@@ -237,8 +238,8 @@ void SchedulerImpl::call(protocol::Transaction::Ptr tx,
     block->appendTransaction(std::move(tx));
 
     // Create temp executive
-    auto blockExecutive = std::make_shared<BlockExecutive>(
-        std::move(block), this, m_calledContextID++, m_transactionSubmitResultFactory, true);
+    auto blockExecutive = std::make_shared<BlockExecutive>(std::move(block), this,
+        m_calledContextID++, m_transactionSubmitResultFactory, true, m_blockFactory, false);
 
     blockExecutive->asyncExecute([executive = blockExecutive, callback = std::move(callback)](
                                      Error::UniquePtr&& error, protocol::BlockHeader::Ptr) {
@@ -318,7 +319,7 @@ void SchedulerImpl::asyncGetLedgerConfig(
     auto ledgerConfig = std::make_shared<ledger::LedgerConfig>();
     auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));
     auto summary =
-        std::make_shared<std::tuple<size_t, std::atomic_size_t, std::atomic_size_t>>(7, 0, 0);
+        std::make_shared<std::tuple<size_t, std::atomic_size_t, std::atomic_size_t>>(6, 0, 0);
 
     auto collecter = [summary = std::move(summary), ledgerConfig = std::move(ledgerConfig),
                          callback = std::move(callbackPtr)](Error::Ptr error,
@@ -358,9 +359,6 @@ void SchedulerImpl::asyncGetLedgerConfig(
                                 boost::lexical_cast<uint64_t>(value));
                             break;
                         case 1:
-                            ledgerConfig->setConsensusTimeout(boost::lexical_cast<uint64_t>(value));
-                            break;
-                        case 2:
                             ledgerConfig->setLeaderSwitchPeriod(
                                 boost::lexical_cast<uint64_t>(value));
                             break;
@@ -408,13 +406,9 @@ void SchedulerImpl::asyncGetLedgerConfig(
         [collecter](Error::Ptr error, std::string config, protocol::BlockNumber) mutable {
             collecter(std::move(error), std::tuple{0, std::move(config)});
         });
-    m_ledger->asyncGetSystemConfigByKey(ledger::SYSTEM_KEY_CONSENSUS_TIMEOUT,
-        [collecter](Error::Ptr error, std::string config, protocol::BlockNumber) mutable {
-            collecter(std::move(error), std::tuple{1, std::move(config)});
-        });
     m_ledger->asyncGetSystemConfigByKey(ledger::SYSTEM_KEY_CONSENSUS_LEADER_PERIOD,
         [collecter](Error::Ptr error, std::string config, protocol::BlockNumber) mutable {
-            collecter(std::move(error), std::tuple{2, std::move(config)});
+            collecter(std::move(error), std::tuple{1, std::move(config)});
         });
     m_ledger->asyncGetBlockNumber(
         [collecter, ledger = m_ledger](Error::Ptr error, protocol::BlockNumber number) mutable {

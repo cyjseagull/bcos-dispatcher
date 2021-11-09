@@ -57,6 +57,7 @@ struct SchedulerFixture
             std::make_shared<bcostars::protocol::TransactionReceiptFactoryImpl>(suite);
         executionMessageFactory = std::make_shared<bcos::executor::NativeExecutionMessageFactory>();
 
+        blockHeaderFactory = std::make_shared<bcostars::protocol::BlockHeaderFactoryImpl>(suite);
         blockFactory = std::make_shared<bcostars::protocol::BlockFactoryImpl>(
             suite, blockHeaderFactory, transactionFactory, transactionReceiptFactory);
 
@@ -171,7 +172,6 @@ BOOST_AUTO_TEST_CASE(executeBlock)
             BOOST_CHECK(!error);
             BOOST_CHECK(config);
             BOOST_CHECK_EQUAL(config->blockTxCountLimit(), 100);
-            BOOST_CHECK_EQUAL(config->consensusTimeout(), 200);
             BOOST_CHECK_EQUAL(config->leaderSwitchPeriod(), 300);
             BOOST_CHECK_EQUAL(config->consensusNodeList().size(), 1);
             BOOST_CHECK_EQUAL(config->observerNodeList().size(), 2);
@@ -227,7 +227,6 @@ BOOST_AUTO_TEST_CASE(parallelExecuteBlock)
             BOOST_CHECK(!error);
             BOOST_CHECK(config);
             BOOST_CHECK_EQUAL(config->blockTxCountLimit(), 100);
-            BOOST_CHECK_EQUAL(config->consensusTimeout(), 200);
             BOOST_CHECK_EQUAL(config->leaderSwitchPeriod(), 300);
             BOOST_CHECK_EQUAL(config->consensusNodeList().size(), 1);
             BOOST_CHECK_EQUAL(config->observerNodeList().size(), 2);

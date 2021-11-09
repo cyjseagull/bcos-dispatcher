@@ -440,7 +440,6 @@ void BlockExecutive::DMTExecute(
                     {
                         m_block->appendReceipt(it.receipt);
                     }
-
                     callback(nullptr, nullptr);
                 }
                 else
@@ -464,14 +463,15 @@ void BlockExecutive::DMTExecute(
                         {
                             m_block->appendReceipt(it.receipt);
                         }
-
-                        m_block->blockHeader()->setStateRoot(hash);
-                        m_block->blockHeader()->setGasUsed(m_gasUsed);
-                        m_block->blockHeader()->setReceiptsRoot(h256(0));  // TODO: calc
-                                                                           // the receipt
-                                                                           // root
-
-                        m_result = m_block->blockHeader();
+                        auto executedBlockHeader =
+                            m_blockFactory->blockHeaderFactory()->populateBlockHeader(
+                                m_block->blockHeader());
+                        executedBlockHeader->setStateRoot(hash);
+                        executedBlockHeader->setGasUsed(m_gasUsed);
+                        executedBlockHeader->setReceiptsRoot(h256(0));  // TODO: calc
+                                                                        // the receipt
+                                                                        // root
+                        m_result = executedBlockHeader;
                         callback(nullptr, m_result);
                     });
                 }
@@ -508,7 +508,8 @@ void BlockExecutive::batchNextBlock(std::function<void(Error::UniquePtr)> callba
     for (auto& it : *(m_scheduler->m_executorManager))
     {
         SCHEDULER_LOG(TRACE) << "NextBlock for executor: " << it.get();
-        it->nextBlockHeader(m_block->blockHeaderConst(), [status](bcos::Error::Ptr&& error) {
+        auto blockHeader = m_block->blockHeaderConst();
+        it->nextBlockHeader(blockHeader, [status](bcos::Error::Ptr&& error) {
             if (error)
             {
                 SCHEDULER_LOG(ERROR)
