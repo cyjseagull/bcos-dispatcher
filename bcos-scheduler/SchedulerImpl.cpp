@@ -4,6 +4,7 @@
 #include "interfaces/protocol/ProtocolTypeDef.h"
 #include "libutilities/Error.h"
 #include <boost/exception/diagnostic_information.hpp>
+#include <boost/format.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/throw_exception.hpp>
 #include <memory>
@@ -18,7 +19,9 @@ void SchedulerImpl::executeBlock(bcos::protocol::Block::Ptr block, bool verify,
     auto signature = block->blockHeaderConst()->signatureList();
     SCHEDULER_LOG(INFO) << "ExecuteBlock request"
                         << LOG_KV("block number", block->blockHeaderConst()->number())
-                        << LOG_KV("verify", verify) << LOG_KV("signatureSize", signature.size());
+                        << LOG_KV("verify", verify) << LOG_KV("signatureSize", signature.size())
+                        << LOG_KV("tx count", block->transactionsSize())
+                        << LOG_KV("meta tx count", block->transactionsMetaDataSize());
 
     std::unique_lock<std::mutex> executeLock(m_executeMutex, std::try_to_lock);
     if (!executeLock.owns_lock())
@@ -28,6 +31,20 @@ void SchedulerImpl::executeBlock(bcos::protocol::Block::Ptr block, bool verify,
         callback(BCOS_ERROR_UNIQUE_PTR(SchedulerError::InvalidStatus, message), nullptr);
         return;
     }
+
+    auto [lastCommitedNumber, lock] = getLastCommitedBlockNumber();
+    if (lastCommitedNumber != 0 && lastCommitedNumber >= block->blockHeaderConst()->number())
+    {
+        lock.unlock();
+        auto message =
+            (boost::format("Try to execute an commited block: %ld, last commited number: %ld") %
+                block->blockHeaderConst()->number() % lastCommitedNumber)
+                .str();
+        SCHEDULER_LOG(ERROR) << "ExecuteBlock error, " << message;
+        callback(BCOS_ERROR_UNIQUE_PTR(SchedulerError::InvalidBlockNumber, message), nullptr);
+        return;
+    }
+    lock.unlock();
 
     std::unique_lock<std::mutex> blocksLock(m_blocksMutex);
 
@@ -204,6 +221,8 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
                                 << "Remove committed block: " << blockNumber << " success";
                         }
 
+                        setLastCommitedBlockNumber(blockNumber);
+
                         commitLock->unlock();
                         // Note: only after the block notify finished can call the callback
                         callback(std::move(_error), std::move(ledgerConfig));
@@ -216,6 +235,8 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
                     m_blocks.pop_front();
                     SCHEDULER_LOG(DEBUG) << "Remove committed block: " << blockNumber << " success";
                 }
+
+                setLastCommitedBlockNumber(blockNumber);
 
                 commitLock->unlock();
                 callback(nullptr, std::move(ledgerConfig));

@@ -17,6 +17,8 @@ enum SchedulerError
     CommitError,
     RollbackError,
     UnexpectedKeyLockError,
+    BatchError,
+    DMTError,
     DAGError,
 };
 

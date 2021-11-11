@@ -419,5 +419,97 @@ BOOST_AUTO_TEST_CASE(executedBlock)
     }
 }
 
+BOOST_AUTO_TEST_CASE(checkCommitedBlock)
+{
+    // Add executor
+    auto executor = std::make_shared<MockParallelExecutor>("executor1");
+    executorManager->addExecutor("executor1", executor);
+
+    auto blockNumber = 100lu;
+    // Generate a test block
+    auto block = blockFactory->createBlock();
+    block->blockHeader()->setNumber(blockNumber);
+
+    for (size_t i = 0; i < 1000; ++i)
+    {
+        auto metaTx = std::make_shared<bcostars::protocol::TransactionMetaDataImpl>(
+            h256(i + 1), "contract" + boost::lexical_cast<std::string>((i + 1) % 10));
+        metaTx->setAttribute(metaTx->attribute() | bcos::protocol::Transaction::Attribute::DAG);
+        block->appendTransactionMetaData(std::move(metaTx));
+    }
+
+    std::promise<bcos::protocol::BlockHeader::Ptr> executedHeader;
+    scheduler->executeBlock(
+        block, false, [&](bcos::Error::Ptr&& error, bcos::protocol::BlockHeader::Ptr&& header) {
+            BOOST_CHECK(!error);
+            BOOST_CHECK(header);
+
+            executedHeader.set_value(std::move(header));
+        });
+
+    auto header = executedHeader.get_future().get();
+
+    BOOST_CHECK(header);
+    BOOST_CHECK_NE(header->stateRoot(), h256());
+
+    SCHEDULER_LOG(TRACE) << "StateRoot: " << header->stateRoot();
+    auto commitHeader = blockHeaderFactory->createBlockHeader();
+    commitHeader->setNumber(blockNumber);
+
+    scheduler->commitBlock(commitHeader,
+        [](bcos::Error::Ptr&& error, bcos::ledger::LedgerConfig::Ptr&&) { BOOST_CHECK(!error); });
+
+    // Try execute a same block
+    auto newHeader = blockHeaderFactory->createBlockHeader();
+    newHeader->setNumber(blockNumber);
+    block->setBlockHeader(newHeader);
+
+    scheduler->executeBlock(
+        block, false, [](bcos::Error::Ptr&& error, bcos::protocol::BlockHeader::Ptr&&) {
+            BOOST_CHECK(error);
+            BOOST_CHECK_EQUAL(
+                error->errorCode(), bcos::scheduler::SchedulerError::InvalidBlockNumber);
+            BOOST_CHECK_GT(error->errorMessage().size(), 0);
+        });
+}
+
+BOOST_AUTO_TEST_CASE(executeWithSystemError)
+{
+    // Add executor
+    auto executor = std::make_shared<MockParallelExecutor>("executor1");
+    executorManager->addExecutor("executor1", executor);
+
+    auto blockNumber = 100lu;
+    // Generate a test block
+    auto block = blockFactory->createBlock();
+    block->blockHeader()->setNumber(blockNumber);
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto metaTx = std::make_shared<bcostars::protocol::TransactionMetaDataImpl>(
+            h256(i + 1), "contract" + boost::lexical_cast<std::string>((i + 1) % 10));
+        // metaTx->setAttribute(metaTx->attribute() | bcos::protocol::Transaction::Attribute::DAG);
+        block->appendTransactionMetaData(std::move(metaTx));
+    }
+
+    // Add an error transaction
+    auto metaTx = std::make_shared<bcostars::protocol::TransactionMetaDataImpl>(
+        h256(10086), "contract" + boost::lexical_cast<std::string>(10086));
+    block->appendTransactionMetaData(std::move(metaTx));
+
+    std::promise<void> executedHeader;
+    scheduler->executeBlock(
+        block, false, [&](bcos::Error::Ptr&& error, bcos::protocol::BlockHeader::Ptr&& header) {
+            BOOST_CHECK(error);
+            BOOST_CHECK_EQUAL(error->errorCode(), bcos::scheduler::SchedulerError::UnknownError);
+            BOOST_CHECK_GT(error->errorMessage().size(), 0);
+            BOOST_CHECK(!header);
+
+            executedHeader.set_value();
+        });
+
+    executedHeader.get_future().get();
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 }  // namespace bcos::test

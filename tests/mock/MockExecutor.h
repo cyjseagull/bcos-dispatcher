@@ -30,6 +30,12 @@ public:
         std::function<void(bcos::Error::UniquePtr, bcos::protocol::ExecutionMessage::UniquePtr)>
             callback) override
     {
+        if (input->transactionHash() == h256(10086))
+        {
+            callback(BCOS_ERROR_UNIQUE_PTR(-1, "i am an error!!!!"), nullptr);
+            return;
+        }
+
         // Always success
         BOOST_CHECK(input);
         if (input->type() == bcos::protocol::ExecutionMessage::TXHASH)

@@ -5,6 +5,7 @@
 #include "bcos-framework/interfaces/dispatcher/SchedulerInterface.h"
 #include "bcos-framework/interfaces/ledger/LedgerInterface.h"
 #include "interfaces/crypto/CommonType.h"
+#include "interfaces/protocol/ProtocolTypeDef.h"
 #include "libprotocol/TransactionSubmitResultFactoryImpl.h"
 #include <bcos-framework/interfaces/executor/ParallelTransactionExecutorInterface.h>
 #include <bcos-framework/interfaces/protocol/BlockFactory.h>
@@ -80,6 +81,21 @@ private:
     std::mutex m_commitMutex;
 
     std::atomic_int64_t m_calledContextID = 0;
+
+    auto getLastCommitedBlockNumber()
+    {
+        std::tuple<bcos::protocol::BlockNumber, std::unique_lock<std::mutex>> result(
+            m_lastCommitedBlockNumber, m_lastCommitedBlockNumberMutex);
+        return result;
+    }
+    void setLastCommitedBlockNumber(bcos::protocol::BlockNumber lastCommitedBlockNumber)
+    {
+        std::unique_lock<std::mutex> lock(m_lastCommitedBlockNumberMutex);
+        m_lastCommitedBlockNumber = lastCommitedBlockNumber;
+    }
+
+    bcos::protocol::BlockNumber m_lastCommitedBlockNumber = 0;
+    std::mutex m_lastCommitedBlockNumberMutex;
 
     ExecutorManager::Ptr m_executorManager;
     bcos::ledger::LedgerInterface::Ptr m_ledger;

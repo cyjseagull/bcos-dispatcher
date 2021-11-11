@@ -97,6 +97,7 @@ private:
     {
         std::atomic_size_t total = 0;
         std::atomic_size_t received = 0;
+        std::atomic_size_t error = 0;
 
         std::function<void(Error::UniquePtr)> callback;
         std::atomic_bool callbackExecuted = false;
