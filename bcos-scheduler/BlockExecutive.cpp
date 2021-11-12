@@ -108,16 +108,12 @@ void BlockExecutive::asyncExecute(
             message->setData(tx->input().toBytes());
             message->setStaticCall(m_staticCall);
 
-            m_executiveStates.emplace_back(i, std::move(message));
+            auto& executive = m_executiveStates.emplace_back(i, std::move(message));
 
             if (tx->attribute() & bcos::protocol::Transaction::Attribute::DAG)
             {
-                // TODO: Executor must support dag execute
-                SCHEDULER_LOG(ERROR) << "Execute transactions with dag!";
-                callback(BCOS_ERROR_UNIQUE_PTR(
-                             SchedulerError::UnknownError, "Execute transactions with dag!"),
-                    nullptr);
-                return;
+                executive.enableDAG = true;
+                withDAG = true;
             }
         }
     }
@@ -778,7 +774,7 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
                 continue;
             }
             m_calledContract.emplace_hint(contractIt, it->message->to());
-            SCHEDULER_LOG(TRACE) << "Executing, "
+            SCHEDULER_LOG(DEBUG) << "Executing, "
                                  << "context id: " << it->message->contextID()
                                  << " seq: " << it->message->seq() << " txHash: " << std::hex
                                  << it->message->transactionHash() << " to: " << it->message->to();

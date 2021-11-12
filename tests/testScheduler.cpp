@@ -16,6 +16,7 @@
 #include "mock/MockExecutor3.h"
 #include "mock/MockExecutorForCall.h"
 #include "mock/MockExecutorForCreate.h"
+#include "mock/MockExecutorForMessageDAG.h"
 #include "mock/MockLedger.h"
 #include "mock/MockMultiParallelExecutor.h"
 #include "mock/MockRPC.h"
@@ -345,6 +346,41 @@ BOOST_AUTO_TEST_CASE(dag)
             h256(i + 1), "contract" + boost::lexical_cast<std::string>((i + 1) % 10));
         metaTx->setAttribute(metaTx->attribute() | bcos::protocol::Transaction::Attribute::DAG);
         block->appendTransactionMetaData(std::move(metaTx));
+    }
+
+    std::promise<bcos::protocol::BlockHeader::Ptr> executedHeader;
+    scheduler->executeBlock(
+        block, false, [&](bcos::Error::Ptr&& error, bcos::protocol::BlockHeader::Ptr&& header) {
+            BOOST_CHECK(!error);
+            BOOST_CHECK(header);
+
+            executedHeader.set_value(std::move(header));
+        });
+
+    auto header = executedHeader.get_future().get();
+
+    BOOST_CHECK(header);
+    BOOST_CHECK_NE(header->stateRoot(), h256());
+}
+
+BOOST_AUTO_TEST_CASE(dagByMessage)
+{
+    // Add executor
+    executorManager->addExecutor("executor1", std::make_shared<MockParallelExecutorByMessage>("executor1"));
+
+    // Generate a test block
+    auto block = blockFactory->createBlock();
+    block->blockHeader()->setNumber(100);
+
+    auto keyPair = blockFactory->cryptoSuite()->signatureImpl()->generateKeyPair();
+    for (size_t i = 0; i < 1000; ++i)
+    {
+        bytes input;
+        auto tx = transactionFactory->createTransaction(20,
+            "contract" + boost::lexical_cast<std::string>((i + 1) % 10), input, 100, 200, "chainID",
+            "groupID", 400, keyPair);
+        tx->setAttribute(bcos::protocol::Transaction::Attribute::DAG);
+        block->appendTransaction(tx);
     }
 
     std::promise<bcos::protocol::BlockHeader::Ptr> executedHeader;

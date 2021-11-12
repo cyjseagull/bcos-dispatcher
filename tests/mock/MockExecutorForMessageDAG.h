@@ -10,12 +10,12 @@ namespace bcos::test
 {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-class MockParallelExecutor : public bcos::executor::ParallelTransactionExecutorInterface
+class MockParallelExecutorByMessage : public bcos::executor::ParallelTransactionExecutorInterface
 {
 public:
-    MockParallelExecutor(const std::string& name) : m_name(name) {}
+    MockParallelExecutorByMessage(const std::string& name) : m_name(name) {}
 
-    ~MockParallelExecutor() override {}
+    ~MockParallelExecutorByMessage() override {}
 
     const std::string& name() const { return m_name; }
 
@@ -31,15 +31,9 @@ public:
         std::function<void(bcos::Error::UniquePtr, bcos::protocol::ExecutionMessage::UniquePtr)>
             callback) override
     {
-        if (input->transactionHash() == h256(10086))
-        {
-            callback(BCOS_ERROR_UNIQUE_PTR(-1, "i am an error!!!!"), nullptr);
-            return;
-        }
-
         // Always success
         BOOST_CHECK(input);
-        if (input->type() == bcos::protocol::ExecutionMessage::TXHASH)
+        if (input->type() == bcos::protocol::ExecutionMessage::MESSAGE)
         {
             BOOST_CHECK_NE(input->transactionHash(), bcos::crypto::HashType());
         }
@@ -64,25 +58,13 @@ public:
         std::vector<bcos::protocol::ExecutionMessage::UniquePtr> messages(inputs.size());
         for (decltype(inputs)::index_type i = 0; i < inputs.size(); ++i)
         {
-            auto [it, inserted] = m_dagHashes.emplace(inputs[i]->transactionHash());
-            boost::ignore_unused(it);
-            BOOST_TEST(inserted);
-
-            // SCHEDULER_LOG(TRACE) << "Executing: " << inputs[i].get();
             BOOST_TEST(inputs[i].get());
-            BOOST_CHECK_EQUAL(inputs[i]->type(), protocol::ExecutionMessage::TXHASH);
+            BOOST_CHECK_EQUAL(inputs[i]->type(), protocol::ExecutionMessage::MESSAGE);
             messages.at(i) = std::move(inputs[i]);
-            if (i < 50)
-            {
-                messages[i]->setType(protocol::ExecutionMessage::SEND_BACK);
-            }
-            else
-            {
-                messages[i]->setType(protocol::ExecutionMessage::FINISHED);
+            messages[i]->setType(protocol::ExecutionMessage::FINISHED);
 
-                std::string result = "OK!";
-                messages[i]->setData(bcos::bytes(result.begin(), result.end()));
-            }
+            std::string result = "OK!";
+            messages[i]->setData(bcos::bytes(result.begin(), result.end()));
         }
 
         callback(nullptr, std::move(messages));
