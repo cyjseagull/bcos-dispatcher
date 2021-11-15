@@ -31,7 +31,7 @@ public:
     }
 
     void asyncGetBlockHashByNumber(protocol::BlockNumber _blockNumber,
-        std::function<void(Error::Ptr, crypto::HashType const&)> _onGetBlock)
+        std::function<void(Error::Ptr, crypto::HashType)> _onGetBlock)
     {
         BOOST_CHECK_EQUAL(_blockNumber, 100);
         _onGetBlock(nullptr, h256(110));

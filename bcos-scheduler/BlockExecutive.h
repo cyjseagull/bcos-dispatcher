@@ -114,8 +114,9 @@ private:
 
     struct ExecutiveState  // Executive state per tx
     {
-        ExecutiveState(int64_t _contextID, bcos::protocol::ExecutionMessage::UniquePtr _message)
-          : contextID(_contextID), message(std::move(_message))
+        ExecutiveState(int64_t _contextID, bcos::protocol::ExecutionMessage::UniquePtr _message,
+            bool _enableDAG)
+          : contextID(_contextID), message(std::move(_message)), enableDAG(_enableDAG)
         {}
 
         int64_t contextID;
@@ -124,9 +125,9 @@ private:
         bcos::Error::UniquePtr error;
         int64_t currentSeq = 0;
         std::set<std::tuple<std::string, std::string>> keyLocks;
-        bool enableDAG = false;
+        bool enableDAG;
     };
-    std::list<ExecutiveState> m_executiveStates;
+    std::multimap<std::string, ExecutiveState, std::less<>> m_executiveStates;
 
     struct ExecutiveResult
     {

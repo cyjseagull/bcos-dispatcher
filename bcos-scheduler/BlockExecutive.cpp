@@ -60,18 +60,18 @@ void BlockExecutive::asyncExecute(
             message->setGasAvailable(TRANSACTION_GAS);
             message->setStaticCall(false);
 
-            auto& executive = m_executiveStates.emplace_back(i, std::move(message));
+            if (metaData->attribute() & bcos::protocol::Transaction::Attribute::DAG)
+            {
+                withDAG = true;
+            }
+
+            m_executiveStates.emplace(
+                std::string(metaData->to()), ExecutiveState(i, std::move(message), withDAG));
 
             if (metaData)
             {
                 m_executiveResults[i].transactionHash = metaData->hash();
                 m_executiveResults[i].source = metaData->source();
-            }
-
-            if (metaData->attribute() & bcos::protocol::Transaction::Attribute::DAG)
-            {
-                executive.enableDAG = true;
-                withDAG = true;
             }
         }
     }
@@ -108,13 +108,14 @@ void BlockExecutive::asyncExecute(
             message->setData(tx->input().toBytes());
             message->setStaticCall(m_staticCall);
 
-            auto& executive = m_executiveStates.emplace_back(i, std::move(message));
-
             if (tx->attribute() & bcos::protocol::Transaction::Attribute::DAG)
             {
-                executive.enableDAG = true;
                 withDAG = true;
             }
+
+            auto to = std::string(message->to());
+            m_executiveStates.emplace(
+                std::move(to), ExecutiveState(i, std::move(message), withDAG));
         }
     }
 
@@ -236,7 +237,7 @@ void BlockExecutive::asyncCommit(std::function<void(Error::UniquePtr)> callback)
             params.primaryTableName = SYS_CURRENT_STATE;
             params.primaryTableKey = SYS_KEY_CURRENT_NUMBER;
             m_scheduler->m_storage->asyncPrepare(
-                params, stateStorage, [status, this](Error::Ptr&& error, uint64_t startTimeStamp) {
+                params, *stateStorage, [status, this](Error::Ptr&& error, uint64_t startTimeStamp) {
                     if (error)
                     {
                         ++status->failed;
@@ -326,9 +327,9 @@ void BlockExecutive::DAGExecute(std::function<void(Error::UniquePtr)> callback)
 
     for (auto it = m_executiveStates.begin(); it != m_executiveStates.end(); ++it)
     {
-        if (it->enableDAG)
+        if (it->second.enableDAG)
         {
-            requests.emplace(it->message->to(), it);
+            requests.emplace(it->first, it);
         }
     }
 
@@ -355,10 +356,10 @@ void BlockExecutive::DAGExecute(std::function<void(Error::UniquePtr)> callback)
         size_t i = 0;
         for (auto messageIt = range.first; messageIt != range.second; ++messageIt)
         {
-            SCHEDULER_LOG(TRACE) << "message: " << messageIt->second->message.get()
+            SCHEDULER_LOG(TRACE) << "message: " << messageIt->second->second.message.get()
                                  << " to: " << messageIt->first;
-            messageIt->second->callStack.push(messageIt->second->currentSeq++);
-            messages->at(i) = std::move(messageIt->second->message);
+            messageIt->second->second.callStack.push(messageIt->second->second.currentSeq++);
+            messages->at(i) = std::move(messageIt->second->second.message);
             iterators->at(i) = messageIt->second;
 
             ++i;
@@ -384,7 +385,7 @@ void BlockExecutive::DAGExecute(std::function<void(Error::UniquePtr)> callback)
                 {
                     for (size_t i = 0; i < responseMessages.size(); ++i)
                     {
-                        (*iterators)[i]->message = std::move(responseMessages[i]);
+                        (*iterators)[i]->second.message = std::move(responseMessages[i]);
                     }
                 }
 
@@ -706,14 +707,14 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
     auto batchStatus = std::make_shared<BatchStatus>();
     batchStatus->callback = std::move(callback);
 
-    bool deleted = true;
+    bool bypass = true;
     for (auto it = m_executiveStates.begin();;)
     {
-        if (!deleted)
+        if (!bypass)
         {
             ++it;
         }
-        deleted = false;
+        bypass = false;
 
         if (it == m_executiveStates.end())
         {
@@ -721,7 +722,7 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
             break;
         }
 
-        if (it->error)
+        if (it->second.error)
         {
             batchStatus->allSended = true;
             ++batchStatus->error;
@@ -731,26 +732,27 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
         }
 
         // When to() is empty, create contract
-        if (it->message->to().empty())
+        if (it->second.message->to().empty())
         {
-            if (it->message->createSalt())
+            if (it->second.message->createSalt())
             {
-                it->message->setTo(newEVMAddress(
-                    it->message->from(), it->message->data(), *(it->message->createSalt())));
+                it->second.message->setTo(newEVMAddress(it->second.message->from(),
+                    it->second.message->data(), *(it->second.message->createSalt())));
             }
             else
             {
-                it->message->setTo(newEVMAddress(number(), it->contextID, it->message->seq()));
+                it->second.message->setTo(
+                    newEVMAddress(number(), it->second.contextID, it->second.message->seq()));
             }
         }
 
         // If call with key locks, acquire it
-        if (!it->message->keyLocks().empty())
+        if (!it->second.message->keyLocks().empty())
         {
-            for (auto& keyLockIt : it->message->keyLocks())
+            for (auto& keyLockIt : it->second.message->keyLocks())
             {
-                if (!m_keyLocks.acquireKeyLock(
-                        it->message->from(), keyLockIt, it->contextID, it->message->seq()))
+                if (!m_keyLocks.acquireKeyLock(it->second.message->from(), keyLockIt,
+                        it->second.contextID, it->second.message->seq()))
                 {
                     batchStatus->callback(BCOS_ERROR_UNIQUE_PTR(
                         UnexpectedKeyLockError, "Unexpected key lock error!"));
@@ -758,32 +760,37 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
                 }
             }
 
-            it->message->setKeyLocks({});
+            it->second.message->setKeyLocks({});
         }
 
-        switch (it->message->type())
+        switch (it->second.message->type())
         {
         // Request type, push stack
         case protocol::ExecutionMessage::MESSAGE:
         case protocol::ExecutionMessage::TXHASH:
         {
             // Check if another context processing same contract
-            auto contractIt = m_calledContract.lower_bound(it->message->to());
-            if (contractIt != m_calledContract.end() && *contractIt == it->message->to())
+            auto contractIt = m_calledContract.lower_bound(it->second.message->to());
+            if (contractIt != m_calledContract.end() && *contractIt == it->second.message->to())
             {
+                // skip the same contract
+                it = m_executiveStates.upper_bound(it->second.message->to());
+                bypass = true;
+
                 continue;
             }
-            m_calledContract.emplace_hint(contractIt, it->message->to());
-            SCHEDULER_LOG(DEBUG) << "Executing, "
-                                 << "context id: " << it->message->contextID()
-                                 << " seq: " << it->message->seq() << " txHash: " << std::hex
-                                 << it->message->transactionHash() << " to: " << it->message->to();
+            m_calledContract.emplace_hint(contractIt, it->second.message->to());
+            SCHEDULER_LOG(TRACE) << "Executing, "
+                                 << "context id: " << it->second.message->contextID()
+                                 << " seq: " << it->second.message->seq() << " txHash: " << std::hex
+                                 << it->second.message->transactionHash()
+                                 << " to: " << it->second.message->to();
 
-            auto seq = it->currentSeq++;
+            auto seq = it->second.currentSeq++;
 
-            it->callStack.push(seq);
+            it->second.callStack.push(seq);
 
-            it->message->setSeq(seq);
+            it->second.message->setSeq(seq);
 
             break;
         }
@@ -792,36 +799,38 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
         case protocol::ExecutionMessage::REVERT:
         {
             // Clear the context keyLocks
-            m_keyLocks.releaseKeyLocks(it->contextID, it->message->seq());
+            m_keyLocks.releaseKeyLocks(it->second.contextID, it->second.message->seq());
 
-            it->callStack.pop();
+            it->second.callStack.pop();
 
             // Empty stack, execution is finished
-            if (it->callStack.empty())
+            if (it->second.callStack.empty())
             {
                 // Execution is finished, generate receipt
-                m_executiveResults[it->contextID].receipt =
+                m_executiveResults[it->second.contextID].receipt =
                     m_scheduler->m_blockFactory->receiptFactory()->createReceipt(
-                        it->message->gasAvailable(), it->message->newEVMContractAddress(),
+                        it->second.message->gasAvailable(),
+                        it->second.message->newEVMContractAddress(),
                         std::make_shared<std::vector<bcos::protocol::LogEntry>>(
-                            it->message->takeLogEntries()),
-                        it->message->status(), it->message->takeData(),
+                            it->second.message->takeLogEntries()),
+                        it->second.message->status(), it->second.message->takeData(),
                         m_block->blockHeaderConst()->number());
 
                 // Calc the gas
-                m_gasUsed += (TRANSACTION_GAS - it->message->gasAvailable());
+                m_gasUsed += (TRANSACTION_GAS - it->second.message->gasAvailable());
 
                 // Remove executive state and continue
-                SCHEDULER_LOG(TRACE) << "Eraseing: " << std::hex << it->message->transactionHash()
-                                     << " " << it->message->to();
+                SCHEDULER_LOG(TRACE)
+                    << "Eraseing: " << std::hex << it->second.message->transactionHash() << " "
+                    << it->second.message->to();
 
                 it = m_executiveStates.erase(it);
-                deleted = true;
+                bypass = true;
                 continue;
             }
 
-            it->message->setSeq(it->callStack.top());
-            it->message->setCreate(false);
+            it->second.message->setSeq(it->second.callStack.top());
+            it->second.message->setCreate(false);
 
             break;
         }
@@ -829,8 +838,9 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
         case protocol::ExecutionMessage::WAIT_KEY:
         {
             // Try acquire key lock
-            if (!m_keyLocks.acquireKeyLock(it->message->to(), it->message->keyLockAcquired(),
-                    it->message->contextID(), it->message->seq()))
+            if (!m_keyLocks.acquireKeyLock(it->second.message->to(),
+                    it->second.message->keyLockAcquired(), it->second.message->contextID(),
+                    it->second.message->seq()))
             {
                 continue;
             }
@@ -840,18 +850,19 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
         // Retry type, send again
         case protocol::ExecutionMessage::SEND_BACK:
         {
-            it->message->setType(protocol::ExecutionMessage::TXHASH);
+            it->second.message->setType(protocol::ExecutionMessage::TXHASH);
 
             break;
         }
         }
 
         // Set current key lock into message
-        auto keyLocks = m_keyLocks.getKeyLocksByContract(it->message->to(), it->contextID);
-        it->message->setKeyLocks(std::move(keyLocks));
+        auto keyLocks =
+            m_keyLocks.getKeyLocksByContract(it->second.message->to(), it->second.contextID);
+        it->second.message->setKeyLocks(std::move(keyLocks));
 
         ++batchStatus->total;
-        auto executor = m_scheduler->m_executorManager->dispatchExecutor(it->message->to());
+        auto executor = m_scheduler->m_executorManager->dispatchExecutor(it->second.message->to());
 
         auto executeCallback = [this, it, batchStatus](bcos::Error::UniquePtr&& error,
                                    bcos::protocol::ExecutionMessage::UniquePtr&& response) {
@@ -860,8 +871,8 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
                 SCHEDULER_LOG(ERROR)
                     << "Execute transaction error: " << boost::diagnostic_information(*error);
 
-                it->error = std::move(error);
-                it->message.reset();
+                it->second.error = std::move(error);
+                it->second.message.reset();
                 // m_executiveStates.erase(it);  // Remove the error state
 
                 // Set error to batch
@@ -869,7 +880,7 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
             }
             else
             {
-                it->message = std::move(response);
+                it->second.message = std::move(response);
             }
 
             SCHEDULER_LOG(TRACE) << "Execute is finished!";
@@ -878,13 +889,13 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
             checkBatch(*batchStatus);
         };
 
-        if (it->message->staticCall())
+        if (it->second.message->staticCall())
         {
-            executor->call(std::move(it->message), std::move(executeCallback));
+            executor->call(std::move(it->second.message), std::move(executeCallback));
         }
         else
         {
-            executor->executeTransaction(std::move(it->message), std::move(executeCallback));
+            executor->executeTransaction(std::move(it->second.message), std::move(executeCallback));
         }
     }
 
@@ -905,9 +916,7 @@ void BlockExecutive::checkBatch(BatchStatus& status)
                                  << status.callbackExecuted;
 
             SCHEDULER_LOG(TRACE) << "Batch run finished"
-                                 << " total: " << status.allSended
-                                 << " success: " << status.allSended - status.error
-                                 << " error: " << status.error;
+                                 << " total: " << status.allSended << " error: " << status.error;
 
             if (status.error > 0)
             {
