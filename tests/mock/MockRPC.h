@@ -21,28 +21,6 @@ public:
         std::function<void(Error::Ptr)> _callback) override
     {}
 
-    void asyncNotifyTransactionResult(std::string const&, const std::string_view& groupID,
-        bcos::crypto::HashType txHash, bcos::protocol::TransactionSubmitResult::Ptr result) override
-    {
-        SCHEDULER_LOG(TRACE) << "Submit callback execute";
-
-        BOOST_CHECK_EQUAL(groupID.size(), 0);
-        BOOST_CHECK_EQUAL(result->status(), 0);
-        BOOST_CHECK_NE(result->blockHash(), h256(0));
-        BOOST_CHECK(result->transactionReceipt());
-        BOOST_CHECK_LT(result->transactionIndex(), 1000 * 8);
-
-        auto receipt = result->transactionReceipt();
-        auto output = receipt->output();
-        std::string_view outputStr((char*)output.data(), output.size());
-        BOOST_CHECK_EQUAL(outputStr, "Hello world!");
-
-        if (latch)
-        {
-            latch->count_down();
-        }
-    }
-
     void asyncNotifyGroupInfo(
         bcos::group::GroupInfo::Ptr _groupInfo, std::function<void(Error::Ptr&&)>) override
     {}

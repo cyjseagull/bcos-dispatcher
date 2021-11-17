@@ -81,6 +81,14 @@ private:
     void DAGExecute(std::function<void(Error::UniquePtr)> error);
     void DMTExecute(std::function<void(Error::UniquePtr, protocol::BlockHeader::Ptr)> callback);
 
+    enum TraverseHint : int8_t
+    {
+        PASS = 0,
+        DELETE,
+        SKIP,
+        END,
+    };
+
     struct CommitStatus
     {
         std::atomic_size_t total;
@@ -126,8 +134,10 @@ private:
         int64_t currentSeq = 0;
         std::set<std::tuple<std::string, std::string>> keyLocks;
         bool enableDAG;
+        bool skip = false;
     };
     std::multimap<std::string, ExecutiveState, std::less<>> m_executiveStates;
+    void traverseExecutive(std::function<TraverseHint(ExecutiveState&)> callback);
 
     struct ExecutiveResult
     {

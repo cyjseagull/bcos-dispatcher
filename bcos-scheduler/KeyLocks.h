@@ -14,6 +14,7 @@
 #include <any>
 #include <forward_list>
 #include <functional>
+#include <gsl/span>
 #include <string_view>
 #include <variant>
 
@@ -48,11 +49,14 @@ public:
         std::string_view contractView() const { return contract; }
     };
 
-    bool acquireKeyLock(const std::string_view& contract, const std::string_view& key,
+    bool batchAcquireKeyLock(std::string_view contract, gsl::span<std::string const> keyLocks,
         int64_t contextID, int64_t seq);
 
+    bool acquireKeyLock(
+        std::string_view contract, std::string_view key, int64_t contextID, int64_t seq);
+
     std::vector<std::string> getKeyLocksByContract(
-        const std::string_view& contract, int64_t excludeContextID) const;
+        std::string_view contract, int64_t excludeContextID) const;
 
     void releaseKeyLocks(int64_t contextID, int64_t seq);
 
