@@ -53,8 +53,7 @@ bool KeyLocks::acquireKeyLock(
                          << " contextID: " << contextID << " seq: " << seq;
 
     // Current context owing the key, accquire it
-    [[maybe_unused]] auto [insertedIt, inserted] =
-        m_keyLocks.emplace(KeyLockItem{std::string(contract), std::string(key), contextID, seq});
+    m_keyLocks.emplace(KeyLockItem{std::string(contract), std::string(key), contextID, seq});
 
     return true;
 }
