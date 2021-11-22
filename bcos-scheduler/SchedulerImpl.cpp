@@ -26,6 +26,8 @@ void SchedulerImpl::executeBlock(bcos::protocol::Block::Ptr block, bool verify,
     std::unique_lock<std::mutex> executeLock(m_executeMutex, std::try_to_lock);
     if (!executeLock.owns_lock())
     {
+        assert(!m_blocks.empty());
+
         auto message = "Another block is executing!";
         SCHEDULER_LOG(ERROR) << "ExecuteBlock error, " << message;
         callback(BCOS_ERROR_UNIQUE_PTR(SchedulerError::InvalidStatus, message), nullptr);
@@ -129,7 +131,14 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
     std::unique_lock<std::mutex> commitLock(m_commitMutex, std::try_to_lock);
     if (!commitLock.owns_lock())
     {
-        auto message = "Another block is commiting!";
+        std::string message;
+        assert(!m_blocks.empty());
+
+        auto& frontBlock = m_blocks.front();
+
+        message = (boost::format("Another block is commiting! Block number: %ld") %
+                   frontBlock.block()->blockHeaderConst()->number())
+                      .str();
         SCHEDULER_LOG(ERROR) << "CommitBlock error, " << message;
         callback(BCOS_ERROR_UNIQUE_PTR(SchedulerError::InvalidStatus, message), nullptr);
         return;
@@ -139,6 +148,8 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
     {
         auto message = "No uncommitted block";
         SCHEDULER_LOG(ERROR) << "CommitBlock error, " << message;
+
+        commitLock.unlock();
         callback(BCOS_ERROR_UNIQUE_PTR(SchedulerError::InvalidBlocks, message), nullptr);
         return;
     }
@@ -184,7 +195,7 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
 
         asyncGetLedgerConfig([this, commitLock = std::move(commitLock),
                                  callback = std::move(callback)](
-                                 Error::Ptr&& error, ledger::LedgerConfig::Ptr ledgerConfig) {
+                                 Error::Ptr error, ledger::LedgerConfig::Ptr ledgerConfig) {
             if (error)
             {
                 SCHEDULER_LOG(ERROR)
@@ -200,12 +211,12 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
             SCHEDULER_LOG(INFO) << "CommitBlock success"
                                 << LOG_KV("block number", ledgerConfig->blockNumber());
 
-            auto& executive = m_blocks.front();
+            auto& frontBlock = m_blocks.front();
             auto blockNumber = ledgerConfig->blockNumber();
 
             if (m_txNotifier)
             {
-                executive.asyncNotify(m_txNotifier,
+                frontBlock.asyncNotify(m_txNotifier,
                     [this, blockNumber, callback = std::move(callback),
                         ledgerConfig = std::move(ledgerConfig),
                         commitLock = std::move(commitLock)](Error::Ptr _error) mutable {
@@ -335,7 +346,7 @@ template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
 void SchedulerImpl::asyncGetLedgerConfig(
-    std::function<void(Error::Ptr&&, ledger::LedgerConfig::Ptr ledgerConfig)> callback)
+    std::function<void(Error::Ptr, ledger::LedgerConfig::Ptr ledgerConfig)> callback)
 {
     auto ledgerConfig = std::make_shared<ledger::LedgerConfig>();
     auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));

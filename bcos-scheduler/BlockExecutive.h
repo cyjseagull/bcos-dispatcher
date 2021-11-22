@@ -86,6 +86,7 @@ private:
         PASS = 0,
         DELETE,
         SKIP,
+        UPDATE,
         END,
     };
 
