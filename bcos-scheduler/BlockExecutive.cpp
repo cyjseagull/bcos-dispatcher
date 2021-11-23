@@ -474,8 +474,8 @@ void BlockExecutive::DMTExecute(
                                 m_block->blockHeader());
                         executedBlockHeader->setStateRoot(hash);
                         executedBlockHeader->setGasUsed(m_gasUsed);
-                        executedBlockHeader->setTxsRoot(m_block->calculateTransactionRoot(false));
-                        executedBlockHeader->setReceiptsRoot(m_block->calculateReceiptRoot(false));
+                        executedBlockHeader->setTxsRoot(m_block->calculateTransactionRoot());
+                        executedBlockHeader->setReceiptsRoot(m_block->calculateReceiptRoot());
 
                         m_result = executedBlockHeader;
                         callback(nullptr, m_result);

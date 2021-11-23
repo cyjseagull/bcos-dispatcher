@@ -66,6 +66,9 @@ public:
     void registerBlockNumberReceiver(
         std::function<void(protocol::BlockNumber blockNumber)> callback) override;
 
+    void getCode(
+        std::string_view contract, std::function<void(Error::Ptr, bcos::bytes)> callback) override;
+
     void registerTransactionNotifier(std::function<void(bcos::protocol::BlockNumber,
             bcos::protocol::TransactionSubmitResultsPtr, std::function<void(Error::Ptr)>)>
             txNotifier);

@@ -329,6 +329,13 @@ void SchedulerImpl::registerBlockNumberReceiver(
     m_blockNumberReceiver = std::move(callback);
 }
 
+void SchedulerImpl::getCode(
+    std::string_view contract, std::function<void(Error::Ptr, bcos::bytes)> callback)
+{
+    auto executor = m_executorManager->dispatchExecutor(contract);
+    executor->getCode(contract, std::move(callback));
+}
+
 void SchedulerImpl::registerTransactionNotifier(std::function<void(bcos::protocol::BlockNumber,
         bcos::protocol::TransactionSubmitResultsPtr, std::function<void(Error::Ptr)>)>
         txNotifier)

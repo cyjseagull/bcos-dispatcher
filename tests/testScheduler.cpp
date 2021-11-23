@@ -366,7 +366,8 @@ BOOST_AUTO_TEST_CASE(dag)
 BOOST_AUTO_TEST_CASE(dagByMessage)
 {
     // Add executor
-    executorManager->addExecutor("executor1", std::make_shared<MockParallelExecutorByMessage>("executor1"));
+    executorManager->addExecutor(
+        "executor1", std::make_shared<MockParallelExecutorByMessage>("executor1"));
 
     // Generate a test block
     auto block = blockFactory->createBlock();
@@ -545,6 +546,18 @@ BOOST_AUTO_TEST_CASE(executeWithSystemError)
         });
 
     executedHeader.get_future().get();
+}
+
+BOOST_AUTO_TEST_CASE(getCode)
+{
+    // Add executor
+    auto executor = std::make_shared<MockParallelExecutor>("executor1");
+    executorManager->addExecutor("executor1", executor);
+
+    scheduler->getCode("hello world!", [](Error::Ptr error, bcos::bytes code) {
+        BOOST_CHECK(!error);
+        BOOST_CHECK(code.empty());
+    });
 }
 
 BOOST_AUTO_TEST_SUITE_END()

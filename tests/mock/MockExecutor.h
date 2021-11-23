@@ -115,6 +115,12 @@ public:
         callback(nullptr);
     }
 
+    void getCode(std::string_view contract,
+        std::function<void(bcos::Error::Ptr, bcos::bytes)> callback) override
+    {
+        callback(nullptr, {});
+    }
+
     void reset(std::function<void(bcos::Error::Ptr)> callback) override {}
 
     void clear() { m_dagHashes.clear(); }
