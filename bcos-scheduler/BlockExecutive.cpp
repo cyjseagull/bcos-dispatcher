@@ -779,6 +779,9 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
             if (executiveState.callStack.empty())
             {
                 // Execution is finished, generate receipt
+                SCHEDULER_LOG(DEBUG)
+                    << "Transaction Finished, logEntries: " << message->logEntries().size();
+
                 m_executiveResults[executiveState.contextID].receipt =
                     m_scheduler->m_blockFactory->receiptFactory()->createReceipt(
                         message->gasAvailable(), message->newEVMContractAddress(),
