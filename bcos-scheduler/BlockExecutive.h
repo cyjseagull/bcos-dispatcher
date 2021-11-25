@@ -137,7 +137,26 @@ private:
         bool enableDAG;
         bool skip = false;
     };
-    std::multimap<std::string, ExecutiveState, std::less<>> m_executiveStates;
+    struct ExecutiveStateComp
+    {
+        bool operator()(const std::tuple<std::string, int64_t>& lhs,
+            const std::tuple<std::string, int64_t>& rhs) const
+        {
+            auto& [lhsTo, lhsContextID] = lhs;
+            auto& [rhsTo, rhsContextID] = rhs;
+
+            if (lhsTo != rhsTo)
+            {
+                return lhsTo < rhsTo;
+            }
+            else
+            {
+                return lhsContextID < rhsContextID;
+            }
+        }
+    };
+    std::map<std::tuple<std::string, int64_t>, ExecutiveState, ExecutiveStateComp>
+        m_executiveStates;
     void traverseExecutive(std::function<TraverseHint(ExecutiveState&)> callback);
 
     struct ExecutiveResult

@@ -17,6 +17,7 @@
 #include <boost/throw_exception.hpp>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <iterator>
 #include <thread>
 #include <utility>
@@ -69,8 +70,9 @@ void BlockExecutive::asyncExecute(
                 withDAG = true;
             }
 
+            auto to = message->to();
             m_executiveStates.emplace(
-                std::string(metaData->to()), ExecutiveState(i, std::move(message), withDAG));
+                std::make_tuple(std::move(to), i), ExecutiveState(i, std::move(message), withDAG));
 
             if (metaData)
             {
@@ -119,7 +121,7 @@ void BlockExecutive::asyncExecute(
 
             auto to = std::string(message->to());
             m_executiveStates.emplace(
-                std::move(to), ExecutiveState(i, std::move(message), withDAG));
+                std::make_tuple(std::move(to), i), ExecutiveState(i, std::move(message), withDAG));
         }
     }
 
@@ -333,7 +335,7 @@ void BlockExecutive::DAGExecute(std::function<void(Error::UniquePtr)> callback)
     {
         if (it->second.enableDAG)
         {
-            requests.emplace(it->first, it);
+            requests.emplace(std::get<0>(it->first), it);
         }
     }
 
@@ -708,6 +710,7 @@ void BlockExecutive::batchBlockRollback(std::function<void(Error::UniquePtr)> ca
 
 void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
 {
+    SCHEDULER_LOG(TRACE) << "Start batch";
     auto batchStatus = std::make_shared<BatchStatus>();
     batchStatus->callback = std::move(callback);
 
@@ -1015,6 +1018,8 @@ void BlockExecutive::traverseExecutive(std::function<TraverseHint(ExecutiveState
 
     for (auto it = m_executiveStates.begin(); it != m_executiveStates.end();)
     {
+        SCHEDULER_LOG(TRACE) << "Traverse " << std::get<0>(it->first) << " | "
+                             << std::get<1>(it->first);
         auto hint = callback(it->second);
         switch (hint)
         {
@@ -1030,7 +1035,7 @@ void BlockExecutive::traverseExecutive(std::function<TraverseHint(ExecutiveState
         }
         case SKIP:
         {
-            it = m_executiveStates.upper_bound(it->first);
+            it = m_executiveStates.upper_bound({std::get<0>(it->first), INT64_MAX});
             break;
         }
         case UPDATE:
@@ -1051,7 +1056,11 @@ OUT:
     {
         for (auto& it : updateNodes)
         {
-            it.key() = it.mapped().message->to();
+            it.key() = std::make_tuple(it.mapped().message->to(), it.mapped().contextID);
+
+            SCHEDULER_LOG(TRACE) << "Reinsert context: " << it.mapped().message->contextID()
+                                 << " | " << it.mapped().message->seq() << " | "
+                                 << std::get<0>(it.key());
             m_executiveStates.insert(std::move(it));
         }
     }
