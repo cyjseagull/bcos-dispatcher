@@ -21,6 +21,7 @@
 #include "mock/MockMultiParallelExecutor.h"
 #include "mock/MockRPC.h"
 #include "mock/MockTransactionalStorage.h"
+#include <bcos-framework/interfaces/executor/PrecompiledTypeDef.h>
 #include <bcos-framework/libexecutor/NativeExecutionMessage.h>
 #include <bcos-framework/testutils/crypto/HashImpl.h>
 #include <bcos-framework/testutils/crypto/SignatureImpl.h>
@@ -89,7 +90,7 @@ struct SchedulerFixture
         };
 
         scheduler = std::make_shared<scheduler::SchedulerImpl>(executorManager, ledger, storage,
-            executionMessageFactory, blockFactory, transactionSubmitResultFactory, hashImpl);
+            executionMessageFactory, blockFactory, transactionSubmitResultFactory, hashImpl, true);
 
         std::dynamic_pointer_cast<scheduler::SchedulerImpl>(scheduler)->registerTransactionNotifier(
             std::move(notifier));
@@ -454,6 +455,37 @@ BOOST_AUTO_TEST_CASE(executedBlock)
                 BOOST_CHECK_EQUAL(header->stateRoot().hex(), hashes[blockNumber].hex());
             });
     }
+}
+
+BOOST_AUTO_TEST_CASE(testDeploySysContract)
+{
+    // Add executor
+    auto executor = std::make_shared<MockParallelExecutor>("executor1");
+    executorManager->addExecutor("executor1", executor);
+
+    protocol::BlockNumber blockNumber = 0;
+
+    // Generate a test block
+    auto block = blockFactory->createBlock();
+    block->blockHeader()->setNumber(blockNumber);
+
+    auto tx = blockFactory->transactionFactory()->createTransaction(
+        3, precompiled::AUTH_COMMITTEE_ADDRESS, {}, u256(1), 500, "chainId", "groupId", utcTime());
+    block->appendTransaction(std::move(tx));
+
+    std::promise<bcos::protocol::BlockHeader::Ptr> executedHeader;
+    scheduler->executeBlock(
+        block, false, [&](bcos::Error::Ptr&& error, bcos::protocol::BlockHeader::Ptr&& header) {
+            BOOST_CHECK(!error);
+            BOOST_CHECK(header);
+
+            executedHeader.set_value(std::move(header));
+        });
+
+    auto header = executedHeader.get_future().get();
+
+    BOOST_CHECK(header);
+    BOOST_CHECK_NE(header->stateRoot(), h256());
 }
 
 BOOST_AUTO_TEST_CASE(checkCommitedBlock)

@@ -2,6 +2,7 @@
 #include "ChecksumAddress.h"
 #include "SchedulerImpl.h"
 #include "bcos-framework/libstorage/StateStorage.h"
+#include "bcos-framework/interfaces/executor/PrecompiledTypeDef.h"
 #include "bcos-scheduler/Common.h"
 #include "interfaces/executor/ExecutionMessage.h"
 #include "interfaces/executor/ParallelTransactionExecutorInterface.h"
@@ -106,6 +107,13 @@ void BlockExecutive::asyncExecute(
             }
             else
             {
+                if (m_scheduler->m_isAuthCheck &&
+                    m_block->blockHeaderConst()->number() == 0 &&
+                    tx->to() == precompiled::AUTH_COMMITTEE_ADDRESS)
+                {
+                    // if enable auth check, and first deploy auth contract
+                    message->setCreate(true);
+                }
                 message->setTo(preprocessAddress(tx->to()));
             }
 
