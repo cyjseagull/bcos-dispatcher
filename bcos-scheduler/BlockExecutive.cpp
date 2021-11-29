@@ -1,11 +1,12 @@
 #include "BlockExecutive.h"
 #include "ChecksumAddress.h"
 #include "SchedulerImpl.h"
-#include "bcos-framework/libstorage/StateStorage.h"
 #include "bcos-framework/interfaces/executor/PrecompiledTypeDef.h"
+#include "bcos-framework/libstorage/StateStorage.h"
 #include "bcos-scheduler/Common.h"
 #include "interfaces/executor/ExecutionMessage.h"
 #include "interfaces/executor/ParallelTransactionExecutorInterface.h"
+#include "interfaces/protocol/Transaction.h"
 #include "libutilities/Error.h"
 #include <tbb/parallel_for_each.h>
 #include <boost/algorithm/hex.hpp>
@@ -53,13 +54,26 @@ void BlockExecutive::asyncExecute(
             message->setType(protocol::ExecutionMessage::TXHASH);
             message->setTransactionHash(metaData->hash());
 
-            if (metaData->to().empty())
+            if (metaData->attribute() & bcos::protocol::Transaction::Attribute::LIQUID_SCALE_CODEC)
             {
-                message->setCreate(true);
+                // LIQUID
+                if (metaData->attribute() & bcos::protocol::Transaction::Attribute::LIQUID_CREATE)
+                {
+                    message->setCreate(true);
+                }
+                message->setTo(std::string(metaData->to()));
             }
             else
             {
-                message->setTo(preprocessAddress(metaData->to()));
+                // SOLIDITY
+                if (metaData->to().empty())
+                {
+                    message->setCreate(true);
+                }
+                else
+                {
+                    message->setTo(preprocessAddress(metaData->to()));
+                }
             }
 
             message->setDepth(0);
@@ -101,20 +115,33 @@ void BlockExecutive::asyncExecute(
             message->setOrigin(toHex(tx->sender()));
             message->setFrom(std::string(message->origin()));
 
-            if (tx->to().empty())
+
+            if (tx->attribute() & bcos::protocol::Transaction::Attribute::LIQUID_SCALE_CODEC)
             {
-                message->setCreate(true);
+                // LIQUID
+                if (tx->attribute() & bcos::protocol::Transaction::Attribute::LIQUID_CREATE)
+                {
+                    message->setCreate(true);
+                }
+                message->setTo(std::string(tx->to()));
             }
             else
             {
-                if (m_scheduler->m_isAuthCheck && !m_staticCall &&
-                    m_block->blockHeaderConst()->number() == 0 &&
-                    tx->to() == precompiled::AUTH_COMMITTEE_ADDRESS)
+                // SOLIDITY
+                if (tx->to().empty())
                 {
-                    // if enable auth check, and first deploy auth contract
                     message->setCreate(true);
                 }
-                message->setTo(preprocessAddress(tx->to()));
+                else
+                {
+                    if (m_scheduler->m_isAuthCheck && m_block->blockHeaderConst()->number() == 0 &&
+                        tx->to() == precompiled::AUTH_COMMITTEE_ADDRESS)
+                    {
+                        // if enable auth check, and first deploy auth contract
+                        message->setCreate(true);
+                    }
+                    message->setTo(preprocessAddress(tx->to()));
+                }
             }
 
             message->setDepth(0);
