@@ -40,9 +40,9 @@
 
 namespace bcos::test
 {
-struct SchedulerFixture
+struct ChecksumFixture
 {
-    SchedulerFixture()
+    ChecksumFixture()
     {
         hashImpl = std::make_shared<Keccak256Hash>();
     }
@@ -58,7 +58,7 @@ struct SchedulerFixture
 
 };
 
-BOOST_FIXTURE_TEST_SUITE(utils, SchedulerFixture)
+BOOST_FIXTURE_TEST_SUITE(utils, ChecksumFixture)
 
 BOOST_AUTO_TEST_CASE(checksumAddress)
 {

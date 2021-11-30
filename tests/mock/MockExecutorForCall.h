@@ -5,6 +5,7 @@
 #include "interfaces/executor/ExecutionMessage.h"
 #include <boost/lexical_cast.hpp>
 #include <tuple>
+#include <bcos-framework/interfaces/executor/PrecompiledTypeDef.h>
 
 namespace bcos::test
 {
@@ -34,6 +35,21 @@ public:
         std::function<void(bcos::Error::UniquePtr, bcos::protocol::ExecutionMessage::UniquePtr)>
             callback) override
     {
+        if (input->to() == precompiled::AUTH_COMMITTEE_ADDRESS )
+        {
+            if(input->create())
+            {
+                callback(BCOS_ERROR_UNIQUE_PTR(-1, "deploy sys contract!"), nullptr);
+                return;
+            }
+            input->setType(protocol::ExecutionMessage::FINISHED);
+            std::string data = "Hello world! response";
+            input->setData(bcos::bytes(data.begin(), data.end()));
+            input->setStatus(0);
+            callback(nullptr, std::move(input));
+            return;
+        }
+
         BOOST_CHECK_EQUAL(input->type(), protocol::ExecutionMessage::MESSAGE);
         BOOST_CHECK_EQUAL(input->to(), "address_to");
         // BOOST_CHECK_EQUAL(input->from().size(), 40);

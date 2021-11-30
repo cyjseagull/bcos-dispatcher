@@ -476,9 +476,8 @@ BOOST_AUTO_TEST_CASE(testDeploySysContract)
     std::promise<bcos::protocol::BlockHeader::Ptr> executedHeader;
     scheduler->executeBlock(
         block, false, [&](bcos::Error::Ptr&& error, bcos::protocol::BlockHeader::Ptr&& header) {
-            BOOST_CHECK(!error);
-            BOOST_CHECK(header);
-
+            // callback(BCOS_ERROR_UNIQUE_PTR(-1, "deploy sys contract!"), nullptr);
+            BOOST_CHECK(error == nullptr);
             executedHeader.set_value(std::move(header));
         });
 
@@ -486,6 +485,29 @@ BOOST_AUTO_TEST_CASE(testDeploySysContract)
 
     BOOST_CHECK(header);
     BOOST_CHECK_NE(header->stateRoot(), h256());
+}
+
+BOOST_AUTO_TEST_CASE(testCallSysContract)
+{
+    // Add executor
+    executorManager->addExecutor(
+        "executor1", std::make_shared<MockParallelExecutorForCall>("executor1"));
+
+    auto tx = blockFactory->transactionFactory()->createTransaction(
+        3, precompiled::AUTH_COMMITTEE_ADDRESS, {}, u256(1), 500, "chainId", "groupId", utcTime());
+
+    bcos::protocol::TransactionReceipt::Ptr receipt;
+
+    scheduler->call(
+        tx, [&](bcos::Error::Ptr error, bcos::protocol::TransactionReceipt::Ptr receiptResponse) {
+            BOOST_CHECK(!error);
+            BOOST_CHECK(receiptResponse);
+
+            receipt = std::move(receiptResponse);
+        });
+    BOOST_CHECK_EQUAL(receipt->blockNumber(), 0);
+    BOOST_CHECK_EQUAL(receipt->status(), 0);
+    BOOST_CHECK_GT(receipt->gasUsed(), 0);
 }
 
 BOOST_AUTO_TEST_CASE(checkCommitedBlock)

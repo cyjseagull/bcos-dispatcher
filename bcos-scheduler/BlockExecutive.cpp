@@ -134,7 +134,8 @@ void BlockExecutive::asyncExecute(
                 }
                 else
                 {
-                    if (m_scheduler->m_isAuthCheck && m_block->blockHeaderConst()->number() == 0 &&
+                    if (m_scheduler->m_isAuthCheck && !m_staticCall &&
+                        m_block->blockHeaderConst()->number() == 0 &&
                         tx->to() == precompiled::AUTH_COMMITTEE_ADDRESS)
                     {
                         // if enable auth check, and first deploy auth contract
