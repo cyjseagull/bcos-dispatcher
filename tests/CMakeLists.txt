@@ -17,4 +17,4 @@ find_package(Boost CONFIG QUIET REQUIRED unit_test_framework serialization)
 find_package(bcos-tars-protocol CONFIG QUIET REQUIRED)
 find_package(tarscpp CONFIG QUIET REQUIRED)
 target_link_libraries(${TEST_BINARY_NAME} ${BCOS_DISPATCHER_TARGET} scheduler bcos-framework::storage bcos-framework::protocol-pb bcos-framework::codec wedpr-crypto::crypto
-Boost::unit_test_framework bcos-tars-protocol::protocol-tars tbb::tbb)
+Boost::unit_test_framework bcos-tars-protocol::protocol-tars TBB::tbb)

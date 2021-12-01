@@ -49,10 +49,10 @@ jobs:
         run: sudo apt install -y git curl build-essential clang cmake ccache
       - name: configure
         if: runner.os == 'macOS'
-        run: export SDKROOT=$(xcrun --sdk macosx --show-sdk-path) && CC=/usr/bin/clang CXX=/usr/bin/clang++ cmake . -DTESTS=ON
+        run: export SDKROOT=$(xcrun --sdk macosx --show-sdk-path) && CC=/usr/bin/clang CXX=/usr/bin/clang++ cmake . -DTESTS=ON -DHUNTER_CONFIGURATION_TYPES=Debug
       - name: configure
         if: runner.os == 'Linux'
-        run: CC=/usr/bin/clang CXX=/usr/bin/clang++ cmake . -DTESTS=ON
+        run: CC=/usr/bin/clang CXX=/usr/bin/clang++ cmake . -DTESTS=ON -DHUNTER_CONFIGURATION_TYPES=Debug
       - name: compile
         run: make -j4
       - name: run test
@@ -88,7 +88,7 @@ jobs:
       - name: install Ubuntu dependencies
         run: sudo apt install -y git curl build-essential cmake ccache
       - name: configure
-        run: cmake . -DTESTS=ON
+        run: cmake . -DTESTS=ON -DHUNTER_CONFIGURATION_TYPES=Debug
       - name: compile
         run: make -j4
       - name: run test
@@ -120,12 +120,17 @@ jobs:
       - name: install CentOS dependencies
         run: |
           yum install -y epel-release centos-release-scl
-          yum install -y git make gcc gcc-c++ glibc-static glibc-devel cmake3 ccache devtoolset-9 python-devel python3-devel && source /opt/rh/devtoolset-9/enable
+          yum install -y git make gcc gcc-c++ glibc-static glibc-devel cmake3 ccache devtoolset-9 libzstd-devel zlib-devel flex bison python-devel python3-devel && source /opt/rh/devtoolset-9/enable
           alias cmake='cmake3'
+      - name: install rust language
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2021-06-17
+          override: true
       - name: configure and compile
         run: |
           source /opt/rh/devtoolset-9/enable
           # mkdir -p build && cd build
-          cmake3 . -DTESTS=ON
+          cmake3 . -DTESTS=ON -DHUNTER_CONFIGURATION_TYPES=Debug
           make -j4
           CTEST_OUTPUT_ON_FAILURE=TRUE make test
