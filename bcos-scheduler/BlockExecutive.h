@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ExecutorManager.h"
-#include "KeyLocks.h"
+#include "GraphKeyLocks.h"
 #include "bcos-framework/interfaces/executor/ExecutionMessage.h"
 #include "bcos-framework/interfaces/protocol/Block.h"
 #include "bcos-framework/interfaces/protocol/BlockHeader.h"
@@ -115,7 +115,7 @@ private:
     void startBatch(std::function<void(Error::UniquePtr)> callback);
     void checkBatch(BatchStatus& status);
 
-    std::string newEVMAddress(int64_t blockNumber, int64_t contextID, int64_t seq);
+    std::string newEVMAddress(int64_t blockNumber, ContextID contextID, Seq seq);
     std::string newEVMAddress(
         const std::string_view& _sender, bytesConstRef _init, u256 const& _salt);
 
@@ -137,26 +137,8 @@ private:
         bool enableDAG;
         bool skip = false;
     };
-    struct ExecutiveStateComp
-    {
-        bool operator()(const std::tuple<std::string, int64_t>& lhs,
-            const std::tuple<std::string, int64_t>& rhs) const
-        {
-            auto& [lhsTo, lhsContextID] = lhs;
-            auto& [rhsTo, rhsContextID] = rhs;
 
-            if (lhsTo != rhsTo)
-            {
-                return lhsTo < rhsTo;
-            }
-            else
-            {
-                return lhsContextID < rhsContextID;
-            }
-        }
-    };
-    std::map<std::tuple<std::string, int64_t>, ExecutiveState, ExecutiveStateComp>
-        m_executiveStates;
+    std::map<std::tuple<std::string, ContextID>, ExecutiveState, std::less<>> m_executiveStates;
     void traverseExecutive(std::function<TraverseHint(ExecutiveState&)> callback);
 
     struct ExecutiveResult
@@ -170,7 +152,7 @@ private:
     std::set<std::string, std::less<>> m_calledContract;
     size_t m_gasUsed = 0;
 
-    KeyLocks m_keyLocks;
+    GraphKeyLocks m_keyLocks;
 
     std::chrono::system_clock::time_point m_currentTimePoint;
 
@@ -187,4 +169,5 @@ private:
     bool m_syncBlock = false;
     bcos::protocol::BlockFactory::Ptr m_blockFactory;
 };
+
 }  // namespace bcos::scheduler

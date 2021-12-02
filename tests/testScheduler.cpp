@@ -12,6 +12,7 @@
 #include "interfaces/protocol/TransactionSubmitResult.h"
 #include "interfaces/storage/StorageInterface.h"
 #include "libprotocol/TransactionSubmitResultFactoryImpl.h"
+#include "mock/MockDeadLockExecutor.h"
 #include "mock/MockExecutor.h"
 #include "mock/MockExecutor3.h"
 #include "mock/MockExecutorForCall.h"
@@ -612,6 +613,27 @@ BOOST_AUTO_TEST_CASE(getCode)
         BOOST_CHECK(!error);
         BOOST_CHECK(code.empty());
     });
+}
+
+BOOST_AUTO_TEST_CASE(executeWithDeadLock)
+{
+    auto executor = std::make_shared<MockDeadLockParallelExecutor>("executor10");
+    executorManager->addExecutor("executor10", executor);
+
+    auto block = blockFactory->createBlock();
+    block->blockHeader()->setNumber(900);
+    for (size_t i = 0; i < 2; ++i)
+    {
+        auto metaTx = std::make_shared<bcostars::protocol::TransactionMetaDataImpl>(
+            h256(i + 1), "contract" + boost::lexical_cast<std::string>(i + 1));
+        block->appendTransactionMetaData(std::move(metaTx));
+    }
+
+    scheduler->executeBlock(
+        block, false, [](bcos::Error::Ptr&& error, bcos::protocol::BlockHeader::Ptr&& blockHeader) {
+            BOOST_CHECK(!error);
+            BOOST_CHECK(blockHeader);
+        });
 }
 
 BOOST_AUTO_TEST_SUITE_END()

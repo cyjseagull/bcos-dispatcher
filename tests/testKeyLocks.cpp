@@ -1,4 +1,4 @@
-#include "../bcos-scheduler/KeyLocks.h"
+#include "../bcos-scheduler/GraphKeyLocks.h"
 #include "libutilities/Common.h"
 #include "mock/MockExecutor.h"
 #include <boost/lexical_cast.hpp>
@@ -12,7 +12,7 @@ struct KeyLocksFixture
 {
     KeyLocksFixture() {}
 
-    scheduler::KeyLocks keyLocks;
+    scheduler::GraphKeyLocks keyLocks;
 };
 
 BOOST_FIXTURE_TEST_SUITE(TestKeyLocks, KeyLocksFixture)
@@ -50,7 +50,7 @@ BOOST_AUTO_TEST_CASE(acquireKeyLock)
     BOOST_CHECK(keyLocks.acquireKeyLock(to, key, 1001, 0));
 }
 
-BOOST_AUTO_TEST_CASE(getKeyLocksByContract)
+BOOST_AUTO_TEST_CASE(getKeyLocksNotHoldingByContext)
 {
     std::string to = "contract1";
     std::string keyPrefix = "key";
@@ -65,14 +65,55 @@ BOOST_AUTO_TEST_CASE(getKeyLocksByContract)
         keyLocks.acquireKeyLock(to, keyPrefix + boost::lexical_cast<std::string>(i), 101, 20);
     }
 
-    auto keys = keyLocks.getKeyLocksByContract(to, 101);
+    auto keys = keyLocks.getKeyLocksNotHoldingByContext(to, 101);
 
     BOOST_CHECK_EQUAL(keys.size(), 100);
+    std::vector<std::string> matchKeys;
     for (size_t i = 0; i < 100; ++i)
     {
         std::string matchKey = keyPrefix + boost::lexical_cast<std::string>(i);
-        BOOST_CHECK_EQUAL(matchKey, keys[i]);
+        matchKeys.emplace_back(std::move(matchKey));
     }
+    std::sort(matchKeys.begin(), matchKeys.end());
+
+    BOOST_CHECK_EQUAL_COLLECTIONS(keys.begin(), keys.end(), matchKeys.begin(), matchKeys.end());
+}
+
+BOOST_AUTO_TEST_CASE(deadLock)
+{
+    std::string to = "contract1";
+    std::string key1 = "key1";
+    std::string key2 = "key2";
+
+    // No dead lock
+    BOOST_CHECK(keyLocks.acquireKeyLock(to, key1, 1000, 1));
+    BOOST_CHECK(keyLocks.acquireKeyLock(to, key2, 1001, 1));
+
+    BOOST_CHECK(!keyLocks.acquireKeyLock(to, key2, 1000, 2));
+
+    auto list = keyLocks.detectDeadLock();
+    for (auto& it : list)
+    {
+        BOOST_FAIL("Unexpected dead lock found");
+        auto [contextID, seq, contractView, keyView] = it;
+        std::cout << "Dead lock context: " << contextID << " seq: " << seq
+                  << " contract: " << contractView << " key: " << keyView << std::endl;
+    }
+
+    // Add a dead lock
+    BOOST_CHECK(!keyLocks.acquireKeyLock(to, key1, 1001, 2));
+
+    list = keyLocks.detectDeadLock();
+    size_t count = 0;
+    for (auto& it : list)
+    {
+        auto [contextID, seq, contractView, keyView] = it;
+        std::cout << "Dead lock context: " << contextID << " seq: " << seq
+                  << " contract: " << contractView << " key: " << keyView << std::endl;
+        ++count;
+    }
+
+    BOOST_CHECK_EQUAL(count, 1);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

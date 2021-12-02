@@ -25,8 +25,7 @@ public:
         bcos::protocol::ExecutionMessageFactory::Ptr executionMessageFactory,
         bcos::protocol::BlockFactory::Ptr blockFactory,
         bcos::protocol::TransactionSubmitResultFactory::Ptr transactionSubmitResultFactory,
-        bcos::crypto::Hash::Ptr hashImpl,
-        bool isAuthCheck)
+        bcos::crypto::Hash::Ptr hashImpl, bool isAuthCheck)
       : m_executorManager(std::move(executorManager)),
         m_ledger(std::move(ledger)),
         m_storage(std::move(storage)),
@@ -87,20 +86,7 @@ private:
 
     std::atomic_int64_t m_calledContextID = 0;
 
-    auto getLastCommitedBlockNumber()
-    {
-        std::tuple<bcos::protocol::BlockNumber, std::unique_lock<std::mutex>> result(
-            m_lastCommitedBlockNumber, m_lastCommitedBlockNumberMutex);
-        return result;
-    }
-    void setLastCommitedBlockNumber(bcos::protocol::BlockNumber lastCommitedBlockNumber)
-    {
-        std::unique_lock<std::mutex> lock(m_lastCommitedBlockNumberMutex);
-        m_lastCommitedBlockNumber = lastCommitedBlockNumber;
-    }
-
-    bcos::protocol::BlockNumber m_lastCommitedBlockNumber = 0;
-    std::mutex m_lastCommitedBlockNumberMutex;
+    std::atomic<bcos::protocol::BlockNumber> m_lastExecutedBlockNumber = 0;
 
     ExecutorManager::Ptr m_executorManager;
     bcos::ledger::LedgerInterface::Ptr m_ledger;

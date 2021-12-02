@@ -1,10 +1,15 @@
 #pragma once
 
 #include <cstdint>
+#include <tuple>
 
 namespace bcos::scheduler
 {
 #define SCHEDULER_LOG(LEVEL) BCOS_LOG(LEVEL) << LOG_BADGE("SCHEDULER")
+
+using ContextID = int64_t;
+using Seq = int64_t;
+using Context = std::tuple<ContextID, Seq>;
 
 enum SchedulerError
 {
