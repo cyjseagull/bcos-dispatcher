@@ -186,6 +186,12 @@ bool GraphKeyLocks::detectDeadLock(ContextID contextID)
         return false;
     }
 
+    if (boost::in_degree(it->second, m_graph) == 0)
+    {
+        // No in degree, not holding key lock
+        return false;
+    }
+
     std::map<VertexID, boost::default_color_type> vertexColors;
     bool hasDeadLock = false;
     boost::depth_first_visit(m_graph, it->second, GraphVisitor(hasDeadLock),

@@ -466,7 +466,6 @@ void BlockExecutive::DMTExecute(
             if (!m_executiveStates.empty())
             {
                 SCHEDULER_LOG(TRACE) << "Non empty states, continue startBatch";
-                m_calledContract.clear();
 
                 startBatch(*recursionCallback);
             }
@@ -751,7 +750,8 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
     auto batchStatus = std::make_shared<BatchStatus>();
     batchStatus->callback = std::move(callback);
 
-    traverseExecutive([this, &batchStatus](ExecutiveState& executiveState) {
+    traverseExecutive([this, &batchStatus, calledContract = std::set<std::string, std::less<>>()](
+                          ExecutiveState& executiveState) mutable {
         if (executiveState.error)
         {
             batchStatus->allSended = true;
@@ -768,24 +768,26 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
         auto contextID = executiveState.contextID;
         auto seq = message->seq();
 
-        switch (message->type())
+        // Check if another context processing same contract
+        auto contractIt = calledContract.end();
+        if (!message->to().empty())
         {
-        // Request type, push stack
-        case protocol::ExecutionMessage::MESSAGE:
-        case protocol::ExecutionMessage::TXHASH:
-        {
-            // Check if another context processing same contract
-            auto contractIt = m_calledContract.lower_bound(message->to());
-            if (contractIt != m_calledContract.end() && *contractIt == message->to())
+            contractIt = calledContract.lower_bound(message->to());
+            if (contractIt != calledContract.end() && *contractIt == message->to())
             {
                 SCHEDULER_LOG(TRACE)
                     << "Skip, " << contextID << " | " << seq << " | " << message->to();
                 executiveState.skip = true;
                 return SKIP;
             }
+        }
 
-            m_calledContract.emplace_hint(contractIt, message->to());
-
+        switch (message->type())
+        {
+        // Request type, push stack
+        case protocol::ExecutionMessage::MESSAGE:
+        case protocol::ExecutionMessage::TXHASH:
+        {
             auto newSeq = executiveState.currentSeq++;
             if (message->to().empty())
             {
@@ -853,6 +855,7 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
             SCHEDULER_LOG(TRACE) << "REVERT By key lock, " << message->contextID() << " | "
                                  << message->seq() << " | " << std::hex
                                  << message->transactionHash() << " | " << message->to();
+
             break;
         }
         // Retry type, send again
@@ -900,6 +903,8 @@ void BlockExecutive::startBatch(std::function<void(Error::UniquePtr)> callback)
             break;
         }
         }
+
+        calledContract.emplace_hint(contractIt, message->to());
 
         // Set current key lock into message
         auto keyLocks = m_keyLocks.getKeyLocksNotHoldingByContext(message->to(), contextID);
@@ -995,23 +1000,26 @@ void BlockExecutive::checkBatch(BatchStatus& status)
             {
                 SCHEDULER_LOG(INFO)
                     << "No transaction executed this batch, start processing dead lock";
-                // If no transaction are processed, detect dead lock
 
-                // Check dead lock from back to front
-                for (auto it = m_executiveStates.rbegin(); it != m_executiveStates.rend(); ++it)
-                {
-                    SCHEDULER_LOG(TRACE) << "Check dead lock at: " << it->second.contextID << " | "
-                                         << it->second.message->seq();
-                    if (m_keyLocks.detectDeadLock(it->second.contextID))
+                traverseExecutive([this](ExecutiveState& executiveState) {
+                    if (executiveState.skip)
                     {
-                        SCHEDULER_LOG(INFO) << "Detected dead lock at " << it->second.contextID
-                                            << " | " << it->second.message->seq() << " , revert";
-
-                        it->second.message->setType(
-                            bcos::protocol::ExecutionMessage::REVERT_KEY_LOCK);
-                        break;
+                        executiveState.skip = false;
+                        return SKIP;
                     }
-                }
+
+                    if (m_keyLocks.detectDeadLock(executiveState.contextID))
+                    {
+                        SCHEDULER_LOG(INFO)
+                            << "Detected dead lock at " << executiveState.contextID << " | "
+                            << executiveState.message->seq() << " , revert";
+
+                        executiveState.message->setType(
+                            bcos::protocol::ExecutionMessage::REVERT_KEY_LOCK);
+                        return END;
+                    }
+                    return PASS;
+                });
             }
             else
             {
@@ -1027,18 +1035,26 @@ void BlockExecutive::checkBatch(BatchStatus& status)
                     switch (message->type())
                     {
                     case protocol::ExecutionMessage::MESSAGE:
-                    case protocol::ExecutionMessage::KEY_LOCK:
                     {
                         m_keyLocks.batchAcquireKeyLock(message->from(), message->keyLocks(),
                             message->contextID(), message->seq());
                         return UPDATE;
                     }
+                    case protocol::ExecutionMessage::KEY_LOCK:
+                    {
+                        m_keyLocks.batchAcquireKeyLock(message->from(), message->keyLocks(),
+                            message->contextID(), message->seq());
+                        return PASS;
+                    }
                     case bcos::protocol::ExecutionMessage::FINISHED:
                     case bcos::protocol::ExecutionMessage::REVERT:
-                    case bcos::protocol::ExecutionMessage::REVERT_KEY_LOCK:
                     {
                         m_keyLocks.releaseKeyLocks(message->contextID(), message->seq());
                         return UPDATE;
+                    }
+                    case bcos::protocol::ExecutionMessage::REVERT_KEY_LOCK:
+                    {
+                        return PASS;
                     }
                     default:
                     {
@@ -1141,14 +1157,13 @@ OUT:
     // Process the update nodes
     if (!updateNodes.empty())
     {
-        for (auto& it : updateNodes)
+        for (auto it = updateNodes.begin(); it != updateNodes.end(); ++it)
         {
-            it.key() = std::make_tuple(it.mapped().message->to(), it.mapped().contextID);
+            it->key() = std::make_tuple(it->mapped().message->to(), it->mapped().contextID);
 
-            SCHEDULER_LOG(TRACE) << "Reinsert context: " << it.mapped().message->contextID()
-                                 << " | " << it.mapped().message->seq() << " | "
-                                 << std::get<0>(it.key());
-            m_executiveStates.insert(std::move(it));
+            SCHEDULER_LOG(TRACE) << "Reinsert context: " << it->mapped().contextID << " | "
+                                 << it->mapped().message->seq() << " | " << std::get<0>(it->key());
+            m_executiveStates.insert(std::move(*it));
         }
     }
 }

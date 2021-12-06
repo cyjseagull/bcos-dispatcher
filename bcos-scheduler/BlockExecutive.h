@@ -42,8 +42,8 @@ public:
         m_scheduler(scheduler),
         m_startContextID(startContextID),
         m_transactionSubmitResultFactory(std::move(transactionSubmitResultFactory)),
-        m_staticCall(staticCall),
-        m_blockFactory(_blockFactory)
+        m_blockFactory(_blockFactory),
+        m_staticCall(staticCall)
     {}
 
     BlockExecutive(bcos::protocol::Block::Ptr block, SchedulerImpl* scheduler,
@@ -133,7 +133,6 @@ private:
         bcos::protocol::ExecutionMessage::UniquePtr message;
         bcos::Error::UniquePtr error;
         int64_t currentSeq = 0;
-        std::set<std::tuple<std::string, std::string>> keyLocks;
         bool enableDAG;
         bool skip = false;
     };
@@ -149,7 +148,6 @@ private:
     };
     std::vector<ExecutiveResult> m_executiveResults;
 
-    std::set<std::string, std::less<>> m_calledContract;
     size_t m_gasUsed = 0;
 
     GraphKeyLocks m_keyLocks;
@@ -165,9 +163,9 @@ private:
     SchedulerImpl* m_scheduler;
     size_t m_startContextID;
     bcos::protocol::TransactionSubmitResultFactory::Ptr m_transactionSubmitResultFactory;
+    bcos::protocol::BlockFactory::Ptr m_blockFactory;
     bool m_staticCall = false;
     bool m_syncBlock = false;
-    bcos::protocol::BlockFactory::Ptr m_blockFactory;
 };
 
 }  // namespace bcos::scheduler
