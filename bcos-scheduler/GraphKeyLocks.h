@@ -44,7 +44,7 @@ public:
 
     void releaseKeyLocks(ContextID contextID, Seq seq);
 
-    std::forward_list<std::tuple<ContextID, Seq, ContractView, KeyView>> detectDeadLock();
+    bool detectDeadLock(ContextID contextID);
 
     struct Vertex : public std::variant<ContextID, KeyLock>
     {

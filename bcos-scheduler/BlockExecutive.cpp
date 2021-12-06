@@ -993,34 +993,24 @@ void BlockExecutive::checkBatch(BatchStatus& status)
 
             if (!m_executiveStates.empty() && status.total == 0)
             {
-                SCHEDULER_LOG(INFO) << "Processing dead lock";
+                SCHEDULER_LOG(INFO)
+                    << "No transaction executed this batch, start processing dead lock";
                 // If no transaction are processed, detect dead lock
-                auto deadLocks = m_keyLocks.detectDeadLock();
-                for (auto& it : deadLocks)
+
+                // Check dead lock from back to front
+                for (auto it = m_executiveStates.rbegin(); it != m_executiveStates.rend(); ++it)
                 {
-                    auto [contextID, seq, contractView, keyView] = it;
-                    SCHEDULER_LOG(INFO) << "Detected dead lock at " << contextID << " | " << seq
-                                        << " | " << contractView << " | " << keyView;
-
-                    auto executiveIt =
-                        m_executiveStates.find(std::make_tuple(contractView, contextID));
-                    if (executiveIt == m_executiveStates.end())
+                    SCHEDULER_LOG(TRACE) << "Check dead lock at: " << it->second.contextID << " | "
+                                         << it->second.message->seq();
+                    if (m_keyLocks.detectDeadLock(it->second.contextID))
                     {
-                        // Find the lastest caller of contract, and revert it
-                        executiveIt =
-                            m_executiveStates.upper_bound(std::make_tuple(contractView, INT64_MAX));
+                        SCHEDULER_LOG(INFO) << "Detected dead lock at " << it->second.contextID
+                                            << " | " << it->second.message->seq() << " , revert";
 
-                        if (executiveIt != m_executiveStates.begin())
-                        {
-                            --executiveIt;
-                        }
+                        it->second.message->setType(
+                            bcos::protocol::ExecutionMessage::REVERT_KEY_LOCK);
+                        break;
                     }
-
-                    SCHEDULER_LOG(INFO) << "Revert: " << executiveIt->second.message->contextID()
-                                        << " | " << executiveIt->second.message->seq() << " | "
-                                        << contractView << " | " << keyView;
-                    executiveIt->second.message->setType(
-                        bcos::protocol::ExecutionMessage::REVERT_KEY_LOCK);
                 }
             }
             else
@@ -1048,7 +1038,7 @@ void BlockExecutive::checkBatch(BatchStatus& status)
                     case bcos::protocol::ExecutionMessage::REVERT_KEY_LOCK:
                     {
                         m_keyLocks.releaseKeyLocks(message->contextID(), message->seq());
-                        return PASS;
+                        return UPDATE;
                     }
                     default:
                     {
