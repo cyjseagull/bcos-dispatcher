@@ -4,12 +4,12 @@ cmake_minimum_required(VERSION 3.15)
 include (Dependencies.cmake)
 include(HunterGate)
 HunterGate(
-    URL "https://${URL_BASE}/FISCO-BCOS/hunter/archive/858de38e7c4c654499f36171feb1057f59e88b71.tar.gz"
-    SHA1 "19eeb6de3c56397e7ed6b45bbc57f2b4000e5b97"
+    URL "https://${URL_BASE}/FISCO-BCOS/hunter/archive/203039fdd0826330facd9c3841082dbf35d0c808.tar.gz"
+    SHA1 "26ca1840eb26da410913469f2f278569c8d383ae"
     FILEPATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/config.cmake"
 )
 project(bcos-scheduler VERSION "3.0.0")
-set(VERSION_SUFFIX "")
+set(VERSION_SUFFIX "-rc1")
 
 # basic settings
 include(Options)

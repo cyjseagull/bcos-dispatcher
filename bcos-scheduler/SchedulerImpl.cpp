@@ -136,7 +136,7 @@ void SchedulerImpl::commitBlock(bcos::protocol::BlockHeader::Ptr header,
 
         auto& frontBlock = m_blocks.front();
 
-        message = (boost::format("Another block is commiting! Block number: %ld") %
+        message = (boost::format("Another block is committing! Block number: %ld") %
                    frontBlock.block()->blockHeaderConst()->number())
                       .str();
         SCHEDULER_LOG(ERROR) << "CommitBlock error, " << message;

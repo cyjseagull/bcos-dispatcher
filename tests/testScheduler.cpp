@@ -167,10 +167,10 @@ BOOST_AUTO_TEST_CASE(executeBlock)
     scheduler->registerBlockNumberReceiver(
         [&](protocol::BlockNumber number) { notifyBlockNumber = number; });
 
-    bool commited = false;
+    bool committed = false;
     scheduler->commitBlock(
         executedHeader, [&](bcos::Error::Ptr&& error, bcos::ledger::LedgerConfig::Ptr&& config) {
-            commited = true;
+            committed = true;
 
             BOOST_CHECK(!error);
             BOOST_CHECK(config);
@@ -181,7 +181,7 @@ BOOST_AUTO_TEST_CASE(executeBlock)
             BOOST_CHECK_EQUAL(config->hash().hex(), h256(110).hex());
         });
 
-    BOOST_CHECK(commited);
+    BOOST_CHECK(committed);
     BOOST_CHECK_EQUAL(notifyBlockNumber, 100);
 }
 
@@ -511,7 +511,7 @@ BOOST_AUTO_TEST_CASE(testCallSysContract)
     BOOST_CHECK_GT(receipt->gasUsed(), 0);
 }
 
-BOOST_AUTO_TEST_CASE(checkCommitedBlock)
+BOOST_AUTO_TEST_CASE(checkCommittedBlock)
 {
     // Add executor
     auto executor = std::make_shared<MockParallelExecutor>("executor1");
